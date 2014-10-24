@@ -76,7 +76,10 @@ func TestDB(t *testing.T) {
 	if err := db.Insert(i); err != nil {
 		t.Fatal(err)
 	}
-
+	// Duplicate entry should fail
+	if err := db.Insert(i); err == nil {
+		t.Fatal("Expected err, but found success")
+	}
 	j := &Object{}
 	// Non-pointer should fail.
 	if err := db.Get(*j, 1, "bar"); err == nil {
