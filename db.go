@@ -1128,7 +1128,7 @@ func insertObjects(db *DB, exec Executor, getPlan func(m *Model) insertPlan, lis
 	for model, list := range objs {
 		err := insertModel(model, exec, getPlan, list)
 		if err != nil {
-			return nil
+			return err
 		}
 	}
 	return nil
