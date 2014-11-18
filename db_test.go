@@ -317,7 +317,7 @@ func TestDBAutoIncrement(t *testing.T) {
 		t.Fatalf("Expected ID of 3, but got %d", e.ID)
 	}
 
-	// Insert mutliple entries at once.
+	// Insert multiple entries at once.
 	e4 := &User{Name: "four"}
 	e5 := &User{Name: "five"}
 	e6 := &User{Name: "size"}
@@ -334,6 +334,26 @@ func TestDBAutoIncrement(t *testing.T) {
 		t.Fatal(err)
 	} else if n != 3 {
 		t.Fatalf("Expected 3, but got %d", n)
+	}
+
+	// Insert multiple entries with auto-increment values at once.
+	e7 := &User{ID: 7, Name: "seven"}
+	e8 := &User{ID: 8, Name: "eight"}
+	e9 := &User{ID: 9, Name: "nine"}
+	if err := db.Insert(e7, e8, e9); err != nil {
+		t.Fatal(err)
+	}
+	for i, e := range []*User{e7, e8, e9} {
+		if e.ID != uint64(i+7) {
+			t.Fatalf("Expected ID of %d, but got %d", i+7, e.ID)
+		}
+	}
+
+	// Insert multiple entries with mismatching auto-increment value presence.
+	e10 := &User{ID: 10, Name: "seven"}
+	e11 := &User{Name: "eight"}
+	if err := db.Insert(e10, e11); err == nil {
+		t.Fatalf("Expected error, but found success")
 	}
 }
 
