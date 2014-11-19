@@ -36,6 +36,10 @@ func TestEncodeSQL(t *testing.T) {
 		{[]byte("\x00'\"\b\n\r\t\x1A\\"), "X'002722080a0d091a5c'"},
 		{time.Date(2012, time.February, 24, 23, 19, 43, 10, time.UTC), "'2012-02-24 23:19:43'"},
 		{time.Date(1999, 1, 2, 3, 4, 5, 0, time.UTC), "'1999-01-02 03:04:05'"},
+		// Three different representations of the same unicode string.
+		{"\xE7\xB1\xB3\xE6\xB4\xBE", "'米派'"},
+		{"\u7C73\u6D3E", "'米派'"},
+		{"米派", "'米派'"},
 	}
 	for _, c := range testCases {
 		var buf bytes.Buffer
@@ -45,7 +49,7 @@ func TestEncodeSQL(t *testing.T) {
 		}
 		encoded := buf.String()
 		if encoded != c.expected {
-			t.Errorf("Expected %s, but got %s", c.expected, encoded)
+			t.Errorf("Expected %q, but got %q", c.expected, encoded)
 		}
 	}
 }

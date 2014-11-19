@@ -95,7 +95,8 @@ func encodeSQLString(w io.Writer, in string) error {
 		return err
 	}
 	start := 0
-	for i, ch := range in {
+	for i := 0; i < len(in); i++ {
+		ch := in[i]
 		if encodedChar := encodeMap[ch]; encodedChar != dontEscape {
 			if start != i {
 				if _, err := io.WriteString(w, in[start:i]); err != nil {
