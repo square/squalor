@@ -24,6 +24,12 @@ import (
 	"sync"
 )
 
+// ErrMixedAutoIncrIDs is returned when attempting to insert multiple
+// records with a mixture of set and unset auto increment ids. This
+// case is difficult to handle correctly, so for now either we update
+// all the ids, or none at all.
+var ErrMixedAutoIncrIDs = errors.New("sql: auto increment column must be all set or unset")
+
 // Executor defines the common interface for executing operations on a
 // DB or on a Tx.
 type Executor interface {
@@ -98,6 +104,7 @@ type insertPlan struct {
 	replaceBuilder *ReplaceBuilder
 	traversals     [][]int
 	autoIncr       []int
+	autoIncrInt    bool
 	hooks          hooks
 }
 
@@ -114,6 +121,15 @@ func makeInsertPlan(m *Model, replace bool) insertPlan {
 				panic(fmt.Errorf("%s: unable to find field %s", m.Name, col))
 			}
 			p.autoIncr = f.Index
+			switch f.Type.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				p.autoIncrInt = true
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				p.autoIncrInt = false
+			default:
+				panic(fmt.Errorf("%s: expecting int or uint for auto-increment field %s but got %s", m.Name, col, f.Type.Kind()))
+			}
+
 		}
 	}
 	if replace {
@@ -1055,10 +1071,18 @@ func insertModel(model *Model, exec Executor, getPlan func(m *Model) insertPlan,
 	argbuf := make(ValExprs, len(list)*n)
 	hooks := plan.hooks
 
+	nAutoIncr := 0
 	for j, obj := range list {
 		v := reflect.Indirect(reflect.ValueOf(obj))
 		if err := hooks.pre(obj, exec); err != nil {
 			return err
+		}
+
+		if plan.autoIncr != nil {
+			f := v.FieldByIndex(plan.autoIncr)
+			if (plan.autoIncrInt && f.Int() != 0) || (!plan.autoIncrInt && f.Uint() != 0) {
+				nAutoIncr++
+			}
 		}
 
 		args := argbuf[j*n : (j+1)*n]
@@ -1069,6 +1093,10 @@ func insertModel(model *Model, exec Executor, getPlan func(m *Model) insertPlan,
 		}
 		tuples[j].Exprs = args
 		rows[j] = &tuples[j]
+	}
+
+	if nAutoIncr != 0 && nAutoIncr != len(list) {
+		return ErrMixedAutoIncrIDs
 	}
 
 	var s string
@@ -1091,9 +1119,7 @@ func insertModel(model *Model, exec Executor, getPlan func(m *Model) insertPlan,
 		return err
 	}
 
-	autoIncr := (plan.autoIncr != nil &&
-		reflect.TypeOf(list[0]).Kind() == reflect.Ptr)
-	if autoIncr {
+	if plan.autoIncr != nil && nAutoIncr == 0 {
 		id, err := res.LastInsertId()
 		if err != nil {
 			return err
@@ -1101,10 +1127,9 @@ func insertModel(model *Model, exec Executor, getPlan func(m *Model) insertPlan,
 		for _, obj := range list {
 			v := reflect.ValueOf(obj).Elem()
 			f := v.FieldByIndex(plan.autoIncr)
-			switch f.Kind() {
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if plan.autoIncrInt {
 				f.SetInt(id)
-			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			} else {
 				f.SetUint(uint64(id))
 			}
 			id++
