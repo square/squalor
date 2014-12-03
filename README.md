@@ -1,6 +1,6 @@
 # Squalor #
 
-Squalor is a library of SQL utilities for marshallilng and
+Squalor is a library of SQL utilities for marshalling and
 unmarshalling of model structs into table rows and programmatic
 construction of SQL statements. It is a combination of the
 functionality in ORM-like libraries such as
