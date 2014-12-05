@@ -40,3 +40,7 @@ Squalor emerged from these experiments to satisfy internal short term
 needs. It is being released in the hopes that others will learn from
 it and find it useful just as we've learned from and utilized gorp,
 sqlx and sqlbuilder.
+
+## Testing ##
+
+https://circleci.com/gh/square/squalor
