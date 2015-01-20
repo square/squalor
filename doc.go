@@ -164,8 +164,8 @@ Get
 The Get method retrieves a single row by primary key and binds the
 result columns to a struct.
 
-    user := &User{ID:42}
-    err := db.Get(user)
+    user := &User{}
+    err := db.Get(user, 42)
     // Returns an error if user 42 cannot be found.
 
 Delete
