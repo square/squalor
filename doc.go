@@ -187,10 +187,6 @@ manipulation language), though the constructed queries are targetted
 to MySQL.
 
     q := users.Select("*").Where(users.C("id").Eq(foo))
-    if err := q.Error(); err != nil {
-      // Query construction failed.
-      return err
-    }
     // q.String() == "SELECT `users`.* FROM users WHERE `users`.`id` = 'foo'"
     var results []User
     err := db.Select(&results, q)
