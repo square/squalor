@@ -195,8 +195,8 @@ func (t *Table) GetKey(cols ...string) *Key {
 }
 
 // C returns an expression for the specified list of columns. An error
-// expression is created if any of the columns do not existing in the
-// table. An error expression is created if no columns are specified.
+// expression is created if any of the columns do not exist in the table. An
+// error expression is created if no columns are specified.
 func (t *Table) C(cols ...string) ValExprBuilder {
 	if len(cols) == 0 {
 		return ValExprBuilder{makeErrVal("no columns specified")}
