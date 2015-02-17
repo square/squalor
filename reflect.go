@@ -93,7 +93,7 @@ func (m fieldMap) getTraversals(names []string) [][]int {
 	for _, name := range names {
 		f, ok := m[name]
 		if !ok {
-			panic(fmt.Errorf("unable to find field %s", name))
+			panic(fmt.Errorf("db field '%s' has no mapping", name))
 		}
 		traversals = append(traversals, f.Index)
 	}
