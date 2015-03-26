@@ -15,7 +15,6 @@
 package squalor
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 )
@@ -91,11 +90,9 @@ func getDBFields(t reflect.Type) fieldMap {
 func (m fieldMap) getTraversals(names []string) [][]int {
 	var traversals [][]int
 	for _, name := range names {
-		f, ok := m[name]
-		if !ok {
-			panic(fmt.Errorf("db field '%s' has no mapping", name))
+		if f, ok := m[name]; ok {
+			traversals = append(traversals, f.Index)
 		}
-		traversals = append(traversals, f.Index)
 	}
 	return traversals
 }
