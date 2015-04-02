@@ -45,7 +45,15 @@ func makeTestDSN(dbName string) string {
 	return buf.String()
 }
 
+func makeTestDBIgnoringUnmappedCols(t testing.TB, ddls ...string) *DB {
+	return makeTestDBWithNewDB(t, NewDBIgnoringUnmappedCols, ddls)
+}
+
 func makeTestDB(t testing.TB, ddls ...string) *DB {
+	return makeTestDBWithNewDB(t, NewDB, ddls)
+}
+
+func makeTestDBWithNewDB(t testing.TB, newDBFunc func(*sql.DB) *DB, ddls []string) *DB {
 	const dbName = "squalor_test"
 
 	// We need to create an initial database connection for the purpose
@@ -77,5 +85,5 @@ func makeTestDB(t testing.TB, ddls ...string) *DB {
 			t.Fatal(err)
 		}
 	}
-	return NewDB(db)
+	return newDBFunc(db)
 }
