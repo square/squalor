@@ -100,6 +100,21 @@ func (m fieldMap) getTraversals(names []string) [][]int {
 	return traversals
 }
 
+func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols bool) []*Column {
+	var mappedColumns []*Column
+	for _, col := range columns {
+		_, ok := m[col.Name]
+		if !ok {
+			if !ignoreUnmappedCols {
+				panic(fmt.Errorf("db field '%s' has no mapping", col.Name))
+			}
+			continue
+		}
+		mappedColumns = append(mappedColumns, col)
+	}
+	return mappedColumns
+}
+
 // deref is Indirect for reflect.Type
 func deref(t reflect.Type) reflect.Type {
 	if t.Kind() == reflect.Ptr {
