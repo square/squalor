@@ -56,7 +56,7 @@ func newTestStatementsDB(t *testing.T) *DB {
 			Columns: table.Columns[:len(table.Columns)-1],
 		}
 		modelT := reflect.TypeOf(d.model)
-		m, err := newModel(modelT, *table)
+		m, err := newModel(db, modelT, *table)
 		if err != nil {
 			t.Fatal(err)
 		}

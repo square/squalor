@@ -85,12 +85,8 @@ type getPlan struct {
 
 func makeGetPlan(m *Model) getPlan {
 	p := getPlan{}
-	p.selectBuilder = m.Select(m.Table.All())
-	var columns []string
-	for _, col := range m.Columns {
-		columns = append(columns, col.Name)
-	}
-	p.traversals = m.fields.getTraversals(columns)
+	p.selectBuilder = m.selectAll()
+	p.traversals = m.fields.getTraversals(m.mappedColNames)
 
 	p.keyColumns = make([]ValExprBuilder, len(m.PrimaryKey.Columns))
 	for i, col := range m.PrimaryKey.Columns {
@@ -110,10 +106,8 @@ type insertPlan struct {
 
 func makeInsertPlan(m *Model, replace bool) insertPlan {
 	p := insertPlan{}
-	var colnames []string
 	var columns []interface{}
-	for _, col := range m.Columns {
-		colnames = append(colnames, col.Name)
+	for _, col := range m.mappedColumns {
 		columns = append(columns, m.Table.C(col.Name))
 		if col.AutoIncr {
 			f, ok := m.fields[col.Name]
@@ -139,7 +133,7 @@ func makeInsertPlan(m *Model, replace bool) insertPlan {
 		p.insertBuilder = m.Insert(columns...)
 		p.hooks = insertHooks{}
 	}
-	p.traversals = m.fields.getTraversals(colnames)
+	p.traversals = m.fields.getTraversals(m.mappedColNames)
 	return p
 }
 
@@ -153,7 +147,7 @@ func makeUpsertPlan(m *Model) insertPlan {
 	for _, col := range m.PrimaryKey.Columns {
 		primaryKey[col.Name] = true
 	}
-	for _, col := range m.Columns {
+	for _, col := range m.mappedColumns {
 		if col.AutoIncr || primaryKey[col.Name] {
 			continue
 		}
@@ -188,7 +182,7 @@ func makeUpdatePlan(m *Model) updatePlan {
 	p.whereTraversals = m.fields.getTraversals(whereColNames)
 
 	var setColumns []string
-	for _, col := range m.Columns {
+	for _, col := range m.mappedColumns {
 		if col.AutoIncr || primaryKey[col.Name] {
 			continue
 		}
@@ -204,8 +198,13 @@ func makeUpdatePlan(m *Model) updatePlan {
 type Model struct {
 	// The table the model is associated with.
 	Table
+	// The DB the model is associated with.
+	db *DB
 	// The mapping from column name to model object field info.
 	fields fieldMap
+	// All DB columns that are mapped in the model.
+	mappedColumns  []*Column
+	mappedColNames []string
 	// The precomputed query plans.
 	delete  deletePlan
 	get     getPlan
@@ -215,11 +214,14 @@ type Model struct {
 	upsert  insertPlan
 }
 
-func newModel(t reflect.Type, table Table) (*Model, error) {
+func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
 	m := &Model{
+		db:     db,
 		Table:  table,
 		fields: getDBFields(t),
 	}
+	m.mappedColumns = m.fields.getMappedColumns(m.Columns, db.IgnoreUnmappedCols)
+	m.mappedColNames = getColumnNames(m.mappedColumns)
 	m.delete = makeDeletePlan(m)
 	m.get = makeGetPlan(m)
 	m.insert = makeInsertPlan(m, false)
@@ -227,6 +229,18 @@ func newModel(t reflect.Type, table Table) (*Model, error) {
 	m.update = makeUpdatePlan(m)
 	m.upsert = makeUpsertPlan(m)
 	return m, nil
+}
+
+func (m *Model) selectAll() *SelectBuilder {
+	return m.Select(m.C(m.mappedColNames...))
+}
+
+func getColumnNames(columns []*Column) []string {
+	var colNames []string
+	for _, c := range columns {
+		colNames = append(colNames, c.Name)
+	}
+	return colNames
 }
 
 func getInsert(m *Model) insertPlan {
@@ -247,6 +261,13 @@ func getUpsert(m *Model) insertPlan {
 type DB struct {
 	*sql.DB
 	AllowStringQueries bool
+	// Whether to ignore unmapped columns for the various DB function calls such as StructScan,
+	// Select, Insert, BindModel, etc. When set to true, it can suppress column mapping validation
+	// errors at DB migration time when new columns are added but the previous version of the binary
+	// is still in use, either actively running or getting started up.
+	//
+	// The default is false.
+	IgnoreUnmappedCols bool
 	mu                 sync.RWMutex
 	models             map[reflect.Type]*Model
 	mappings           map[reflect.Type]fieldMap
@@ -257,6 +278,7 @@ func NewDB(db *sql.DB) *DB {
 	return &DB{
 		DB:                 db,
 		AllowStringQueries: true,
+		IgnoreUnmappedCols: false,
 		models:             map[reflect.Type]*Model{},
 		mappings:           map[reflect.Type]fieldMap{},
 	}
@@ -333,7 +355,7 @@ func (db *DB) BindModel(name string, obj interface{}) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err = newModel(t, *table)
+	m, err = newModel(db, t, *table)
 	if err != nil {
 		return nil, err
 	}
@@ -676,7 +698,6 @@ func (r *Rows) initScan(t reflect.Type) error {
 		r.dest = []interface{}{ptr.Interface()}
 	} else {
 		m := r.db.getMapping(t)
-
 		// Fetch the column names in the result.
 		cols, err := r.Rows.Columns()
 		if err != nil {
@@ -691,7 +712,11 @@ func (r *Rows) initScan(t reflect.Type) error {
 		for i, col := range cols {
 			field, ok := m[col]
 			if !ok {
-				return fmt.Errorf("unable to find mapping for column '%s'", col)
+				if !r.db.IgnoreUnmappedCols {
+					return fmt.Errorf("unable to find mapping for column '%s'", col)
+				}
+				r.dest[i] = new(sql.RawBytes)
+				continue
 			}
 			r.dest[i] = r.value.FieldByIndex(field.Index).Addr().Interface()
 		}
@@ -1149,7 +1174,6 @@ func insertObjects(db *DB, exec Executor, getPlan func(m *Model) insertPlan, lis
 	if err != nil {
 		return err
 	}
-
 	for model, list := range objs {
 		err := insertModel(model, exec, getPlan, list)
 		if err != nil {
