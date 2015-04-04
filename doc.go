@@ -187,7 +187,7 @@ manipulation language), though the constructed queries are targetted
 to MySQL.
 
     q := users.Select("*").Where(users.C("id").Eq(foo))
-    // q.String() == "SELECT `users`.* FROM users WHERE `users`.`id` = 'foo'"
+    // squalor.Serialize(q) == "SELECT `users`.* FROM users WHERE `users`.`id` = 'foo'", nil
     var results []User
     err := db.Select(&results, q)
 
