@@ -7,7 +7,7 @@ GitHub by forking the repository and sending a pull request.
 When submitting code, please make every effort to follow existing
 conventions and style in order to keep the code as readable as
 possible. Please also make sure your code compiles and the tests pass
-by running `./integration_test.sh`. The code must also be formmatted
+by running `./integration_test.sh`. The code must also be formatted
 with `go fmt`.
 
 Before your code can be accepted into the project you must also sign the

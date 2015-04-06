@@ -796,21 +796,49 @@ func unwrapBoolExpr(expr BoolExpr) BoolExpr {
 
 // And creates an AND expression.
 func (e BoolExprBuilder) And(expr BoolExpr) BoolExprBuilder {
+	var conditions []BoolExpr
+
+	if andExpr, ok := e.BoolExpr.(*AndExpr); ok {
+		conditions = append(conditions, andExpr.Exprs...)
+	} else {
+		conditions = append(conditions, e.BoolExpr)
+	}
+
+	unwrapped := unwrapBoolExpr(expr)
+	if andExpr, ok := unwrapped.(*AndExpr); ok {
+		conditions = append(conditions, andExpr.Exprs...)
+	} else {
+		conditions = append(conditions, unwrapped)
+	}
+
 	return BoolExprBuilder{
 		&AndExpr{
 			Op:    astAndExpr,
-			Left:  &ParenBoolExpr{Expr: e.BoolExpr},
-			Right: unwrapBoolExpr(expr),
+			Exprs: conditions,
 		}}
 }
 
 // Or creates an OR expression.
 func (e BoolExprBuilder) Or(expr BoolExpr) BoolExprBuilder {
+	var conditions []BoolExpr
+
+	if orExpr, ok := e.BoolExpr.(*OrExpr); ok {
+		conditions = append(conditions, orExpr.Exprs...)
+	} else {
+		conditions = append(conditions, e.BoolExpr)
+	}
+
+	unwrapped := unwrapBoolExpr(expr)
+	if orExpr, ok := unwrapped.(*OrExpr); ok {
+		conditions = append(conditions, orExpr.Exprs...)
+	} else {
+		conditions = append(conditions, unwrapped)
+	}
+
 	return BoolExprBuilder{
 		&OrExpr{
 			Op:    astOrExpr,
-			Left:  &ParenBoolExpr{Expr: e.BoolExpr},
-			Right: unwrapBoolExpr(expr),
+			Exprs: conditions,
 		}}
 }
 

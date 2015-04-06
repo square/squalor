@@ -681,18 +681,34 @@ const (
 
 // AndExpr represents an AND expression.
 type AndExpr struct {
-	Op          string
-	Left, Right BoolExpr
+	Op    string
+	Exprs []BoolExpr
 }
 
 func (node *AndExpr) Serialize(w io.Writer) error {
-	if err := node.Left.Serialize(w); err != nil {
+	if len(node.Exprs) == 0 {
+		_, err := w.Write(astBoolTrue)
+		return err
+	} else if len(node.Exprs) == 1 {
+		return node.Exprs[0].Serialize(w)
+	}
+
+	if _, err := w.Write(astOpenParen); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, node.Op); err != nil {
+	if err := node.Exprs[0].Serialize(w); err != nil {
 		return err
 	}
-	return node.Right.Serialize(w)
+	for _, expr := range node.Exprs[1:] {
+		if _, err := io.WriteString(w, node.Op); err != nil {
+			return err
+		}
+		if err := expr.Serialize(w); err != nil {
+			return err
+		}
+	}
+	_, err := w.Write(astCloseParen)
+	return err
 }
 
 const (
@@ -701,18 +717,34 @@ const (
 
 // OrExpr represents an OR expression.
 type OrExpr struct {
-	Op          string
-	Left, Right BoolExpr
+	Op    string
+	Exprs []BoolExpr
 }
 
 func (node *OrExpr) Serialize(w io.Writer) error {
-	if err := node.Left.Serialize(w); err != nil {
+	if len(node.Exprs) == 0 {
+		_, err := w.Write(astBoolFalse)
+		return err
+	} else if len(node.Exprs) == 1 {
+		return node.Exprs[0].Serialize(w)
+	}
+
+	if _, err := w.Write(astOpenParen); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, node.Op); err != nil {
+	if err := node.Exprs[0].Serialize(w); err != nil {
 		return err
 	}
-	return node.Right.Serialize(w)
+	for _, expr := range node.Exprs[1:] {
+		if _, err := io.WriteString(w, node.Op); err != nil {
+			return err
+		}
+		if err := expr.Serialize(w); err != nil {
+			return err
+		}
+	}
+	_, err := w.Write(astCloseParen)
+	return err
 }
 
 const (
