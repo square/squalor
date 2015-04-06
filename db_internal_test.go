@@ -120,18 +120,18 @@ func TestDBDeleteStatements(t *testing.T) {
 		},
 		{[]interface{}{&multiCol{1, 2, 3, 4}},
 			[]string{
-				"DELETE FROM `multi` WHERE ((`multi`.`a` = 1) AND `multi`.`b` = 2) AND `multi`.`c` IN (3)",
+				"DELETE FROM `multi` WHERE (`multi`.`a` = 1 AND `multi`.`b` = 2 AND `multi`.`c` IN (3))",
 			},
 		},
 		{[]interface{}{&multiCol{1, 2, 3, 4}, &multiCol{1, 2, 4, 5}},
 			[]string{
-				"DELETE FROM `multi` WHERE ((`multi`.`a` = 1) AND `multi`.`b` = 2) AND `multi`.`c` IN (3, 4)",
+				"DELETE FROM `multi` WHERE (`multi`.`a` = 1 AND `multi`.`b` = 2 AND `multi`.`c` IN (3, 4))",
 			},
 		},
 		{[]interface{}{&multiCol{1, 2, 3, 4}, &multiCol{1, 3, 4, 5}},
 			[]string{
-				"DELETE FROM `multi` WHERE ((`multi`.`a` = 1) AND `multi`.`b` = 2) AND `multi`.`c` IN (3)",
-				"DELETE FROM `multi` WHERE ((`multi`.`a` = 1) AND `multi`.`b` = 3) AND `multi`.`c` IN (4)",
+				"DELETE FROM `multi` WHERE (`multi`.`a` = 1 AND `multi`.`b` = 2 AND `multi`.`c` IN (3))",
+				"DELETE FROM `multi` WHERE (`multi`.`a` = 1 AND `multi`.`b` = 3 AND `multi`.`c` IN (4))",
 			},
 		},
 	}
@@ -166,7 +166,7 @@ func TestDBGetStatements(t *testing.T) {
 		},
 		{&multiCol{}, []interface{}{1, 2, 3},
 			"SELECT `multi`.`a`, `multi`.`b`, `multi`.`c`, `multi`.`d` " +
-				"FROM `multi` WHERE ((`multi`.`a` = 1) AND `multi`.`b` = 2) AND `multi`.`c` = 3",
+				"FROM `multi` WHERE (`multi`.`a` = 1 AND `multi`.`b` = 2 AND `multi`.`c` = 3)",
 		},
 	}
 
@@ -283,15 +283,15 @@ func TestDBUpdateStatements(t *testing.T) {
 		{[]interface{}{&multiCol{1, 2, 3, 4}},
 			[]string{
 				"UPDATE `multi` SET `multi`.`d` = 4 " +
-					"WHERE ((`multi`.`a` = 1) AND `multi`.`b` = 2) AND `multi`.`c` = 3",
+					"WHERE (`multi`.`a` = 1 AND `multi`.`b` = 2 AND `multi`.`c` = 3)",
 			},
 		},
 		{[]interface{}{&multiCol{1, 2, 3, 4}, &multiCol{5, 6, 7, 8}},
 			[]string{
 				"UPDATE `multi` SET `multi`.`d` = 4 " +
-					"WHERE ((`multi`.`a` = 1) AND `multi`.`b` = 2) AND `multi`.`c` = 3",
+					"WHERE (`multi`.`a` = 1 AND `multi`.`b` = 2 AND `multi`.`c` = 3)",
 				"UPDATE `multi` SET `multi`.`d` = 8 " +
-					"WHERE ((`multi`.`a` = 5) AND `multi`.`b` = 6) AND `multi`.`c` = 7",
+					"WHERE (`multi`.`a` = 5 AND `multi`.`b` = 6 AND `multi`.`c` = 7)",
 			},
 		},
 	}
