@@ -83,11 +83,28 @@ type recordingExecutor struct {
 	query []string
 }
 
-func (r *recordingExecutor) Exec(stmt string, args ...interface{}) (sql.Result, error) {
+func (r *recordingExecutor) Exec(stmt interface{}, args ...interface{}) (sql.Result, error) {
+	var querystr string
+	var err error
+
+	switch t := stmt.(type) {
+	case string:
+		querystr = t
+		return r.Exec(t, args...)
+	case Serializer:
+		querystr, err = Serialize(t)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unexpected stmt type")
+	}
+
 	if len(args) != 0 {
 		panic(fmt.Errorf("expected 0 args: %+v", args))
 	}
-	r.exec = append(r.exec, stmt)
+
+	r.exec = append(r.exec, querystr)
 	return dummyResult{}, nil
 }
 

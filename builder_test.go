@@ -441,6 +441,52 @@ func TestSelectBuilder(t *testing.T) {
 	}
 }
 
+func TestSerializeWithPlaceholders(t *testing.T) {
+	type User struct {
+		Foo, Bar, Qux string
+	}
+	users := NewTable("users", User{})
+	foo := users.C("foo")
+
+	type Object struct {
+		Foo, Baz string
+	}
+
+	testCases := []struct {
+		builder  *SelectBuilder
+		expected string
+	}{
+		{users.Select(foo.As("bar")),
+			"SELECT `users`.`foo` AS `bar` FROM `users`"},
+		{users.Select("*").Where(foo.Eq(1)),
+			"SELECT * FROM `users` WHERE `users`.`foo` = ?"},
+		{users.Select("*").Where(foo.Neq(false)),
+			"SELECT * FROM `users` WHERE `users`.`foo` != ?"},
+		{users.Select("*").Where(foo.NullSafeEq(false)),
+			"SELECT * FROM `users` WHERE `users`.`foo` <=> ?"},
+		{users.Select("*").Where(foo.Gte(time.Time{})),
+			"SELECT * FROM `users` WHERE `users`.`foo` >= ?"},
+		{users.Select("*").Where(foo.Lt(2.5)),
+			"SELECT * FROM `users` WHERE `users`.`foo` < ?"},
+		{users.Select("*").Where(foo.Lt(true)),
+			"SELECT * FROM `users` WHERE `users`.`foo` < ?"},
+		{users.Select("*").Where(foo.IsNull()),
+			"SELECT * FROM `users` WHERE `users`.`foo` IS NULL"},
+		{users.Select(foo).Where(foo.In([]string{"baz", "qux"})),
+			"SELECT `users`.`foo` FROM `users` WHERE `users`.`foo` IN (?, ?)"},
+		{users.Select(foo).Where(foo.Like("baz")),
+			"SELECT `users`.`foo` FROM `users` WHERE `users`.`foo` LIKE ?"},
+	}
+
+	for _, c := range testCases {
+		if sql, err := SerializeWithPlaceholders(c.builder); err != nil {
+			t.Errorf("Expected success, but found %s\n%s", err, c.expected)
+		} else if c.expected != sql {
+			t.Errorf("Expected\n%s\nbut got\n%s", c.expected, sql)
+		}
+	}
+}
+
 func TestSelectBuilderErrors(t *testing.T) {
 	type User struct {
 		Foo string
