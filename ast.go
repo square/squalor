@@ -26,19 +26,107 @@ import (
 // The Serializer interface is implemented by all
 // expressions/statements.
 type Serializer interface {
-	// Serialize writes the statement/expression to the io.Writer. If an
-	// error is returned the io.Writer may contain partial output.
-	Serialize(w io.Writer) error
+	// Serialize writes the statement/expression to the Writer. If an
+	// error is returned the Writer may contain partial output.
+	Serialize(w Writer) error
 }
 
 // Serialize serializes a serializer to a string.
 func Serialize(s Serializer) (string, error) {
-	var buf bytes.Buffer
-	if err := s.Serialize(&buf); err != nil {
+	w := &standardWriter{}
+	if err := s.Serialize(w); err != nil {
 		return "", err
 	}
-	return buf.String(), nil
+	return w.String(), nil
 }
+
+// SerializeWithPlaceholders serializes a serializer to a string but without substituting
+// values. It may be useful for logging.
+func SerializeWithPlaceholders(s Serializer) (string, error) {
+	w := &placeholderWriter{}
+	if err := s.Serialize(w); err != nil {
+		return "", err
+	}
+	return w.String(), nil
+}
+
+// Writer defines an interface for writing a AST as SQL.
+type Writer interface {
+	io.Writer
+
+	// WriteBytes writes a string of unprintable value.
+	WriteBytes(node BytesVal) error
+	// WriteEncoded writes an already encoded value.
+	WriteEncoded(node EncodedVal) error
+	// WriteNum writes a number value.
+	WriteNum(node NumVal) error
+	// WriteRaw writes a raw Go value.
+	WriteRaw(node RawVal) error
+	// WriteStr writes a SQL string value.
+	WriteStr(node StrVal) error
+}
+
+type standardWriter struct {
+	bytes.Buffer
+}
+
+func (w *standardWriter) WriteRaw(node RawVal) error {
+	return encodeSQLValue(w, node.Val)
+}
+
+func (w *standardWriter) WriteEncoded(node EncodedVal) error {
+	_, err := w.Write(node.Val)
+	return err
+}
+
+func (w *standardWriter) WriteStr(node StrVal) error {
+	return encodeSQLString(w, string(node))
+}
+
+func (w *standardWriter) WriteBytes(node BytesVal) error {
+	return encodeSQLBytes(w, []byte(node))
+}
+
+func (w *standardWriter) WriteNum(node NumVal) error {
+	_, err := io.WriteString(w, string(node))
+	return err
+}
+
+// placeholderWriter will write all SQL value types as ? placeholders.
+type placeholderWriter struct {
+	bytes.Buffer
+}
+
+func (w *placeholderWriter) WriteRaw(node RawVal) error {
+	_, err := w.Write(astPlaceholder)
+	return err
+}
+
+func (w *placeholderWriter) WriteEncoded(node EncodedVal) error {
+	_, err := w.Write(astPlaceholder)
+	return err
+}
+
+func (w *placeholderWriter) WriteStr(node StrVal) error {
+	_, err := w.Write(astPlaceholder)
+	return err
+}
+
+func (w *placeholderWriter) WriteBytes(node BytesVal) error {
+	_, err := w.Write(astPlaceholder)
+	return err
+}
+
+func (w *placeholderWriter) WriteNum(node NumVal) error {
+	_, err := w.Write(astPlaceholder)
+	return err
+}
+
+var (
+	// Placeholder is a placeholder for a value in a SQL statement. It is replaced with
+	// an actual value when the query is executed.
+	Placeholder = PlaceholderVal{}
+)
 
 // Statement represents a statement.
 type Statement interface {
@@ -92,7 +180,7 @@ var (
 	astSelectFrom = []byte(" FROM ")
 )
 
-func (node *Select) Serialize(w io.Writer) error {
+func (node *Select) Serialize(w Writer) error {
 	if _, err := w.Write(astSelect); err != nil {
 		return err
 	}
@@ -142,7 +230,7 @@ const (
 	astIntersect = "INTERSECT"
 )
 
-func (node *Union) Serialize(w io.Writer) error {
+func (node *Union) Serialize(w Writer) error {
 	if err := node.Left.Serialize(w); err != nil {
 		return err
 	}
@@ -173,7 +261,7 @@ var (
 	astSpace      = []byte(" ")
 )
 
-func (node *Insert) Serialize(w io.Writer) error {
+func (node *Insert) Serialize(w Writer) error {
 	if _, err := io.WriteString(w, node.Kind); err != nil {
 		return err
 	}
@@ -229,7 +317,7 @@ var (
 	astSet    = []byte(" SET ")
 )
 
-func (node *Update) Serialize(w io.Writer) error {
+func (node *Update) Serialize(w Writer) error {
 	if _, err := w.Write(astUpdate); err != nil {
 		return err
 	}
@@ -268,7 +356,7 @@ var (
 	astDeleteFrom = []byte("FROM ")
 )
 
-func (node *Delete) Serialize(w io.Writer) error {
+func (node *Delete) Serialize(w Writer) error {
 	if _, err := w.Write(astDelete); err != nil {
 		return err
 	}
@@ -293,7 +381,7 @@ func (node *Delete) Serialize(w io.Writer) error {
 // Comments represents a list of comments.
 type Comments []string
 
-func (node Comments) Serialize(w io.Writer) error {
+func (node Comments) Serialize(w Writer) error {
 	for _, c := range node {
 		if _, err := io.WriteString(w, c); err != nil {
 			return nil
@@ -312,7 +400,7 @@ var (
 	astCommaSpace = []byte(", ")
 )
 
-func (node SelectExprs) Serialize(w io.Writer) error {
+func (node SelectExprs) Serialize(w Writer) error {
 	var prefix []byte
 	for _, n := range node {
 		if _, err := w.Write(prefix); err != nil {
@@ -344,7 +432,7 @@ var (
 	astStar = []byte("*")
 )
 
-func (node *StarExpr) Serialize(w io.Writer) error {
+func (node *StarExpr) Serialize(w Writer) error {
 	if node.TableName != "" {
 		if err := quoteName(w, node.TableName); err != nil {
 			return err
@@ -367,7 +455,7 @@ var (
 	astAsPrefix = []byte(" AS `")
 )
 
-func (node *NonStarExpr) Serialize(w io.Writer) error {
+func (node *NonStarExpr) Serialize(w Writer) error {
 	if err := node.Expr.Serialize(w); err != nil {
 		return err
 	}
@@ -396,7 +484,7 @@ var (
 	astCloseParen = []byte(")")
 )
 
-func (node Columns) Serialize(w io.Writer) error {
+func (node Columns) Serialize(w Writer) error {
 	if _, err := w.Write(astOpenParen); err != nil {
 		return err
 	}
@@ -410,7 +498,7 @@ func (node Columns) Serialize(w io.Writer) error {
 // TableExprs represents a list of table expressions.
 type TableExprs []TableExpr
 
-func (node TableExprs) Serialize(w io.Writer) error {
+func (node TableExprs) Serialize(w Writer) error {
 	var prefix []byte
 	for _, n := range node {
 		if _, err := w.Write(prefix); err != nil {
@@ -442,7 +530,7 @@ type AliasedTableExpr struct {
 	Hints *IndexHints
 }
 
-func (node *AliasedTableExpr) Serialize(w io.Writer) error {
+func (node *AliasedTableExpr) Serialize(w Writer) error {
 	if err := node.Expr.Serialize(w); err != nil {
 		return err
 	}
@@ -480,7 +568,7 @@ type TableName struct {
 	Name, Qualifier string
 }
 
-func (node *TableName) Serialize(w io.Writer) error {
+func (node *TableName) Serialize(w Writer) error {
 	if node.Qualifier != "" {
 		if err := quoteName(w, node.Qualifier); err != nil {
 			return err
@@ -515,7 +603,7 @@ const (
 	astNaturalJoin  = "NATURAL JOIN"
 )
 
-func (node *JoinTableExpr) Serialize(w io.Writer) error {
+func (node *JoinTableExpr) Serialize(w Writer) error {
 	if err := node.LeftExpr.Serialize(w); err != nil {
 		return err
 	}
@@ -551,7 +639,7 @@ var (
 	astOn = []byte(" ON ")
 )
 
-func (node *OnJoinCond) Serialize(w io.Writer) error {
+func (node *OnJoinCond) Serialize(w Writer) error {
 	if _, err := w.Write(astOn); err != nil {
 		return err
 	}
@@ -567,7 +655,7 @@ var (
 	astUsing = []byte(" USING ")
 )
 
-func (node *UsingJoinCond) Serialize(w io.Writer) error {
+func (node *UsingJoinCond) Serialize(w Writer) error {
 	if _, err := w.Write(astUsing); err != nil {
 		return err
 	}
@@ -586,7 +674,7 @@ const (
 	astForce  = "FORCE"
 )
 
-func (node *IndexHints) Serialize(w io.Writer) error {
+func (node *IndexHints) Serialize(w Writer) error {
 	if _, err := fmt.Fprintf(w, " %s INDEX ", node.Type); err != nil {
 		return err
 	}
@@ -622,7 +710,7 @@ func NewWhere(typ string, expr BoolExpr) *Where {
 	return &Where{Type: typ, Expr: expr}
 }
 
-func (node *Where) Serialize(w io.Writer) error {
+func (node *Where) Serialize(w Writer) error {
 	if node == nil {
 		return nil
 	}
@@ -646,8 +734,9 @@ func (*ComparisonExpr) expr() {}
 func (*RangeCond) expr()      {}
 func (*NullCheck) expr()      {}
 func (*ExistsExpr) expr()     {}
+func (PlaceholderVal) expr()  {}
 func (RawVal) expr()          {}
-func (encodedVal) expr()      {}
+func (EncodedVal) expr()      {}
 func (StrVal) expr()          {}
 func (NumVal) expr()          {}
 func (ValArg) expr()          {}
@@ -685,7 +774,7 @@ type AndExpr struct {
 	Exprs []BoolExpr
 }
 
-func (node *AndExpr) Serialize(w io.Writer) error {
+func (node *AndExpr) Serialize(w Writer) error {
 	if len(node.Exprs) == 0 {
 		_, err := w.Write(astBoolTrue)
 		return err
@@ -721,7 +810,7 @@ type OrExpr struct {
 	Exprs []BoolExpr
 }
 
-func (node *OrExpr) Serialize(w io.Writer) error {
+func (node *OrExpr) Serialize(w Writer) error {
 	if len(node.Exprs) == 0 {
 		_, err := w.Write(astBoolFalse)
 		return err
@@ -757,7 +846,7 @@ type NotExpr struct {
 	Expr BoolExpr
 }
 
-func (node *NotExpr) Serialize(w io.Writer) error {
+func (node *NotExpr) Serialize(w Writer) error {
 	if _, err := io.WriteString(w, node.Op); err != nil {
 		return err
 	}
@@ -769,7 +858,7 @@ type ParenBoolExpr struct {
 	Expr BoolExpr
 }
 
-func (node *ParenBoolExpr) Serialize(w io.Writer) error {
+func (node *ParenBoolExpr) Serialize(w Writer) error {
 	if _, err := w.Write(astOpenParen); err != nil {
 		return err
 	}
@@ -802,7 +891,7 @@ const (
 	astNotLike = " NOT LIKE "
 )
 
-func (node *ComparisonExpr) Serialize(w io.Writer) error {
+func (node *ComparisonExpr) Serialize(w Writer) error {
 	if err := node.Left.Serialize(w); err != nil {
 		return err
 	}
@@ -829,7 +918,7 @@ var (
 	astAnd = []byte(" AND ")
 )
 
-func (node *RangeCond) Serialize(w io.Writer) error {
+func (node *RangeCond) Serialize(w Writer) error {
 	if err := node.Left.Serialize(w); err != nil {
 		return err
 	}
@@ -857,7 +946,7 @@ const (
 	astIsNotNull = " IS NOT NULL"
 )
 
-func (node *NullCheck) Serialize(w io.Writer) error {
+func (node *NullCheck) Serialize(w Writer) error {
 	if err := node.Expr.Serialize(w); err != nil {
 		return err
 	}
@@ -876,19 +965,33 @@ type ValExpr interface {
 	Expr
 }
 
-func (RawVal) valExpr()      {}
-func (encodedVal) valExpr()  {}
-func (StrVal) valExpr()      {}
-func (NumVal) valExpr()      {}
-func (ValArg) valExpr()      {}
-func (*NullVal) valExpr()    {}
-func (*ColName) valExpr()    {}
-func (ValTuple) valExpr()    {}
-func (*Subquery) valExpr()   {}
-func (*BinaryExpr) valExpr() {}
-func (*UnaryExpr) valExpr()  {}
-func (*FuncExpr) valExpr()   {}
-func (*CaseExpr) valExpr()   {}
+func (PlaceholderVal) valExpr() {}
+func (RawVal) valExpr()         {}
+func (EncodedVal) valExpr()     {}
+func (StrVal) valExpr()         {}
+func (NumVal) valExpr()         {}
+func (ValArg) valExpr()         {}
+func (*NullVal) valExpr()       {}
+func (*ColName) valExpr()       {}
+func (ValTuple) valExpr()       {}
+func (*Subquery) valExpr()      {}
+func (*BinaryExpr) valExpr()    {}
+func (*UnaryExpr) valExpr()     {}
+func (*FuncExpr) valExpr()      {}
+func (*CaseExpr) valExpr()      {}
+
+var (
+	astPlaceholder = []byte("?")
+)
+
+// PlaceholderVal represents a placeholder parameter that will be supplied
+// when executing the query. It will be serialized as a ?.
+type PlaceholderVal struct{}
+
+func (node PlaceholderVal) Serialize(w Writer) error {
+	_, err := w.Write(astPlaceholder)
+	return err
+}
 
 // RawVal represents a raw go value
 type RawVal struct {
@@ -900,26 +1003,25 @@ var (
 	astBoolFalse = []byte("0")
 )
 
-func (node RawVal) Serialize(w io.Writer) error {
-	return encodeSQLValue(w, node.Val)
+func (node RawVal) Serialize(w Writer) error {
+	return w.WriteRaw(node)
 }
 
-// encodedVal represents an already encoded value. Not exported but
-// this struct must be used with caution.
-type encodedVal struct {
+// EncodedVal represents an already encoded value. This struct must be used
+// with caution because misuse can provide an avenue for SQL injection attacks.
+type EncodedVal struct {
 	Val []byte
 }
 
-func (node encodedVal) Serialize(w io.Writer) error {
-	_, err := w.Write(node.Val)
-	return err
+func (node EncodedVal) Serialize(w Writer) error {
+	return w.WriteEncoded(node)
 }
 
 // StrVal represents a string value.
 type StrVal string
 
-func (node StrVal) Serialize(w io.Writer) error {
-	return encodeSQLString(w, string(node))
+func (node StrVal) Serialize(w Writer) error {
+	return w.WriteStr(node)
 }
 
 // BytesVal represents a string of unprintable value.
@@ -928,8 +1030,8 @@ type BytesVal []byte
 func (BytesVal) expr()    {}
 func (BytesVal) valExpr() {}
 
-func (node BytesVal) Serialize(w io.Writer) error {
-	return encodeSQLBytes(w, []byte(node))
+func (node BytesVal) Serialize(w Writer) error {
+	return w.WriteBytes(node)
 }
 
 // ErrVal represents an error condition that occurred while
@@ -941,22 +1043,21 @@ type ErrVal struct {
 func (ErrVal) expr()    {}
 func (ErrVal) valExpr() {}
 
-func (node ErrVal) Serialize(w io.Writer) error {
+func (node ErrVal) Serialize(w Writer) error {
 	return node.Err
 }
 
 // NumVal represents a number.
 type NumVal string
 
-func (node NumVal) Serialize(w io.Writer) error {
-	_, err := io.WriteString(w, string(node))
-	return err
+func (node NumVal) Serialize(w Writer) error {
+	return w.WriteNum(node)
 }
 
 // ValArg represents a named bind var argument.
 type ValArg string
 
-func (node ValArg) Serialize(w io.Writer) error {
+func (node ValArg) Serialize(w Writer) error {
 	_, err := fmt.Fprintf(w, ":%s", string(node)[1:])
 	return err
 }
@@ -968,7 +1069,7 @@ var (
 	astNull = []byte("NULL")
 )
 
-func (node *NullVal) Serialize(w io.Writer) error {
+func (node *NullVal) Serialize(w Writer) error {
 	_, err := w.Write(astNull)
 	return err
 }
@@ -983,7 +1084,7 @@ var (
 	astPeriod    = []byte(".")
 )
 
-func (node *ColName) Serialize(w io.Writer) error {
+func (node *ColName) Serialize(w Writer) error {
 	if node.Qualifier != "" {
 		if err := quoteName(w, node.Qualifier); err != nil {
 			return err
@@ -1020,7 +1121,7 @@ type ValTuple struct {
 	Exprs ValExprs
 }
 
-func (node ValTuple) Serialize(w io.Writer) error {
+func (node ValTuple) Serialize(w Writer) error {
 	if _, err := w.Write(astOpenParen); err != nil {
 		return err
 	}
@@ -1035,7 +1136,7 @@ func (node ValTuple) Serialize(w io.Writer) error {
 // It's not a valid expression because it's not parenthesized.
 type ValExprs []ValExpr
 
-func (node ValExprs) Serialize(w io.Writer) error {
+func (node ValExprs) Serialize(w Writer) error {
 	var prefix []byte
 	for _, n := range node {
 		if _, err := w.Write(prefix); err != nil {
@@ -1072,7 +1173,7 @@ const (
 	astMod    = '%'
 )
 
-func (node *BinaryExpr) Serialize(w io.Writer) error {
+func (node *BinaryExpr) Serialize(w Writer) error {
 	if err := node.Left.Serialize(w); err != nil {
 		return err
 	}
@@ -1095,7 +1196,7 @@ const (
 	astTilda      = '~'
 )
 
-func (node *UnaryExpr) Serialize(w io.Writer) error {
+func (node *UnaryExpr) Serialize(w Writer) error {
 	if _, err := fmt.Fprintf(w, "%c", node.Operator); err != nil {
 		return err
 	}
@@ -1113,7 +1214,7 @@ var (
 	astFuncDistinct = []byte("DISTINCT ")
 )
 
-func (node *FuncExpr) Serialize(w io.Writer) error {
+func (node *FuncExpr) Serialize(w Writer) error {
 	if _, err := io.WriteString(w, node.Name); err != nil {
 		return err
 	}
@@ -1139,7 +1240,7 @@ type CaseExpr struct {
 	Else  ValExpr
 }
 
-func (node *CaseExpr) Serialize(w io.Writer) error {
+func (node *CaseExpr) Serialize(w Writer) error {
 	if _, err := fmt.Fprintf(w, "CASE "); err != nil {
 		return err
 	}
@@ -1180,7 +1281,7 @@ type When struct {
 	Val  ValExpr
 }
 
-func (node *When) Serialize(w io.Writer) error {
+func (node *When) Serialize(w Writer) error {
 	fmt.Sprintf("WHEN ")
 	if err := node.Cond.Serialize(w); err != nil {
 		return err
@@ -1196,7 +1297,7 @@ var (
 	astValues = []byte("VALUES ")
 )
 
-func (node Values) Serialize(w io.Writer) error {
+func (node Values) Serialize(w Writer) error {
 	prefix := astValues
 	for _, n := range node {
 		if _, err := w.Write(prefix); err != nil {
@@ -1217,7 +1318,7 @@ var (
 	astGroupBy = []byte(" GROUP BY ")
 )
 
-func (node GroupBy) Serialize(w io.Writer) error {
+func (node GroupBy) Serialize(w Writer) error {
 	prefix := astGroupBy
 	for _, n := range node {
 		if _, err := w.Write(prefix); err != nil {
@@ -1238,7 +1339,7 @@ var (
 	astOrderBy = []byte(" ORDER BY ")
 )
 
-func (node OrderBy) Serialize(w io.Writer) error {
+func (node OrderBy) Serialize(w Writer) error {
 	prefix := astOrderBy
 	for _, n := range node {
 		if _, err := w.Write(prefix); err != nil {
@@ -1264,7 +1365,7 @@ const (
 	astDesc = " DESC"
 )
 
-func (node *Order) Serialize(w io.Writer) error {
+func (node *Order) Serialize(w Writer) error {
 	if err := node.Expr.Serialize(w); err != nil {
 		return err
 	}
@@ -1281,7 +1382,7 @@ var (
 	astLimit = []byte(" LIMIT ")
 )
 
-func (node *Limit) Serialize(w io.Writer) error {
+func (node *Limit) Serialize(w Writer) error {
 	if node == nil {
 		return nil
 	}
@@ -1302,7 +1403,7 @@ func (node *Limit) Serialize(w io.Writer) error {
 // UpdateExprs represents a list of update expressions.
 type UpdateExprs []*UpdateExpr
 
-func (node UpdateExprs) Serialize(w io.Writer) error {
+func (node UpdateExprs) Serialize(w Writer) error {
 	var prefix []byte
 	for _, n := range node {
 		if _, err := w.Write(prefix); err != nil {
@@ -1326,7 +1427,7 @@ var (
 	astUpdateEq = []byte(" = ")
 )
 
-func (node *UpdateExpr) Serialize(w io.Writer) error {
+func (node *UpdateExpr) Serialize(w Writer) error {
 	if err := node.Name.Serialize(w); err != nil {
 		return nil
 	}
@@ -1343,7 +1444,7 @@ var (
 	astOnDupKeyUpdate = []byte(" ON DUPLICATE KEY UPDATE ")
 )
 
-func (node OnDup) Serialize(w io.Writer) error {
+func (node OnDup) Serialize(w Writer) error {
 	if node == nil {
 		return nil
 	}

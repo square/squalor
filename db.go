@@ -19,9 +19,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"sync"
+	"time"
 )
 
 // ErrMixedAutoIncrIDs is returned when attempting to insert multiple
@@ -34,7 +36,7 @@ var ErrMixedAutoIncrIDs = errors.New("sql: auto increment column must be all set
 // DB or on a Tx.
 type Executor interface {
 	Delete(list ...interface{}) (int64, error)
-	Exec(string, ...interface{}) (sql.Result, error)
+	Exec(query interface{}, args ...interface{}) (sql.Result, error)
 	Get(dest interface{}, keys ...interface{}) error
 	Insert(list ...interface{}) error
 	Query(query interface{}, args ...interface{}) (*Rows, error)
@@ -255,6 +257,14 @@ func getUpsert(m *Model) insertPlan {
 	return m.upsert
 }
 
+// stringSerializer is a wrapper around a string that implements Serializer.
+type stringSerializer string
+
+func (ss stringSerializer) Serialize(w Writer) error {
+	_, err := io.WriteString(w, string(ss))
+	return err
+}
+
 // DB is a wrapper around a sql.DB which also implements the
 // squalor.Executor interface. DB is safe for concurrent use by
 // multiple goroutines.
@@ -268,6 +278,7 @@ type DB struct {
 	//
 	// The default is false.
 	IgnoreUnmappedCols bool
+	Logger             QueryLogger
 	mu                 sync.RWMutex
 	models             map[reflect.Type]*Model
 	mappings           map[reflect.Type]fieldMap
@@ -279,9 +290,19 @@ func NewDB(db *sql.DB) *DB {
 		DB:                 db,
 		AllowStringQueries: true,
 		IgnoreUnmappedCols: false,
+		Logger:             nil,
 		models:             map[reflect.Type]*Model{},
 		mappings:           map[reflect.Type]fieldMap{},
 	}
+}
+
+func (db *DB) logQuery(query Serializer, exec Executor, start time.Time, err error) {
+	if db.Logger == nil {
+		return
+	}
+
+	executionTime := time.Now().Sub(start)
+	db.Logger.Log(query, exec, executionTime, err)
 }
 
 // GetModel retrieves the model for the specified object. Obj must be
@@ -321,19 +342,19 @@ func (db *DB) getMapping(t reflect.Type) fieldMap {
 	return mapping
 }
 
-func (db *DB) queryString(query interface{}) (string, error) {
+func (db *DB) getSerializer(query interface{}) (Serializer, error) {
 	if t, ok := query.(Serializer); ok {
-		return Serialize(t)
+		return t, nil
 	}
 
 	if db.AllowStringQueries {
 		switch t := query.(type) {
 		case string:
-			return t, nil
+			return stringSerializer(t), nil
 		}
 	}
 
-	return "", fmt.Errorf("unsupported query type %T", query)
+	return nil, fmt.Errorf("unsupported query type %T", query)
 }
 
 // BindModel binds the supplied interface with the named table. You
@@ -411,6 +432,25 @@ func (db *DB) Delete(list ...interface{}) (int64, error) {
 	return deleteObjects(db, db, list)
 }
 
+// Exec executes a query without returning any rows. The args are for any
+// placeholder parameters in the query.
+func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
+	serializer, err := db.getSerializer(query)
+	if err != nil {
+		return nil, err
+	}
+	querystr, err := Serialize(serializer)
+	if err != nil {
+		return nil, err
+	}
+
+	start := time.Now()
+	result, err := db.DB.Exec(querystr, args...)
+	db.logQuery(serializer, db, start, err)
+
+	return result, err
+}
+
 // Get runs a SQL SELECT to fetch a single row. Keys must be the
 // primary keys defined for the table. The order must match the order
 // of the columns in the primary key.
@@ -440,11 +480,19 @@ func (db *DB) Insert(list ...interface{}) error {
 // small wrapper around sql.DB.Query that returns a *squalor.Rows
 // instead.
 func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
-	querystr, err := db.queryString(query)
+	serializer, err := db.getSerializer(query)
 	if err != nil {
 		return nil, err
 	}
+	querystr, err := Serialize(serializer)
+	if err != nil {
+		return nil, err
+	}
+
+	start := time.Now()
 	rows, err := db.DB.Query(querystr, args...)
+	db.logQuery(serializer, db, start, err)
+
 	if err != nil {
 		return nil, err
 	}
@@ -456,11 +504,19 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 // until Row's Scan method is called. This is a small wrapper around
 // sql.DB.QueryRow that returns a *squalor.Row instead.
 func (db *DB) QueryRow(query interface{}, args ...interface{}) *Row {
-	querystr, err := db.queryString(query)
+	serializer, err := db.getSerializer(query)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
+	querystr, err := Serialize(serializer)
+	if err != nil {
+		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
+	}
+
+	start := time.Now()
 	rows, err := db.DB.Query(querystr, args...)
+	db.logQuery(serializer, db, start, err)
+
 	return &Row{rows: Rows{Rows: rows, db: db}, err: err}
 }
 
@@ -535,6 +591,25 @@ type Tx struct {
 	DB *DB
 }
 
+// Exec executes a query that doesn't return rows. For example: an
+// INSERT and UPDATE.
+func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
+	serializer, err := tx.DB.getSerializer(query)
+	if err != nil {
+		return nil, err
+	}
+	querystr, err := Serialize(serializer)
+	if err != nil {
+		return nil, err
+	}
+
+	start := time.Now()
+	result, err := tx.Tx.Exec(querystr, args...)
+	tx.DB.logQuery(serializer, tx, start, err)
+
+	return result, err
+}
+
 // Delete runs a batched SQL DELETE statement, grouping the objects by
 // the model type of the list elements. List elements must be pointers
 // to structs.
@@ -576,11 +651,19 @@ func (tx *Tx) Insert(list ...interface{}) error {
 // small wrapper around sql.Tx.Query that returns a *squalor.Rows
 // instead.
 func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
-	querystr, err := tx.DB.queryString(query)
+	serializer, err := tx.DB.getSerializer(query)
 	if err != nil {
 		return nil, err
 	}
+	querystr, err := Serialize(serializer)
+	if err != nil {
+		return nil, err
+	}
+
+	start := time.Now()
 	rows, err := tx.Tx.Query(querystr, args...)
+	tx.DB.logQuery(serializer, tx, start, err)
+
 	if err != nil {
 		return nil, err
 	}
@@ -592,11 +675,19 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 // until Row's Scan method is called. This is a small wrapper around
 // sql.Tx.QueryRow that returns a *squalor.Row instead.
 func (tx *Tx) QueryRow(query interface{}, args ...interface{}) *Row {
-	querystr, err := tx.DB.queryString(query)
+	serializer, err := tx.DB.getSerializer(query)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
+	querystr, err := Serialize(serializer)
+	if err != nil {
+		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
+	}
+
+	start := time.Now()
 	rows, err := tx.Tx.Query(querystr, args...)
+	tx.DB.logQuery(serializer, tx, start, err)
+
 	return &Row{rows: Rows{Rows: rows, db: tx.DB}, err: err}
 }
 
@@ -942,7 +1033,7 @@ func deleteModel(model *Model, exec Executor, list []interface{}) (int64, error)
 	// the AND and IN expression. The buffers are the max size to
 	// minimize reallocations, though it is possible we'll only use a
 	// handful of values in the same batch.
-	valbuf := make([]encodedVal, len(rows)+n-1)
+	valbuf := make([]EncodedVal, len(rows)+n-1)
 	argbuf := make(ValExprs, 0, len(rows))
 	var inTuple ValTuple
 	inTuple.Exprs = argbuf
@@ -985,12 +1076,7 @@ func deleteModel(model *Model, exec Executor, list []interface{}) (int64, error)
 				b.Where(andExpr.And(inExpr))
 			}
 
-			s, err := Serialize(&b)
-			if err != nil {
-				return -1, err
-			}
-
-			res, err := exec.Exec(s)
+			res, err := exec.Exec(&b)
 			if err != nil {
 				return -1, err
 			}
@@ -1124,22 +1210,18 @@ func insertModel(model *Model, exec Executor, getPlan func(m *Model) insertPlan,
 		return ErrMixedAutoIncrIDs
 	}
 
-	var s string
-	var err error
+	var serializer Serializer
 	if plan.replaceBuilder != nil {
 		b := *plan.replaceBuilder
 		b.AddRows(rows)
-		s, err = Serialize(&b)
+		serializer = &b
 	} else {
 		b := *plan.insertBuilder
 		b.AddRows(rows)
-		s, err = Serialize(&b)
-	}
-	if err != nil {
-		return err
+		serializer = &b
 	}
 
-	res, err := exec.Exec(s)
+	res, err := exec.Exec(serializer)
 	if err != nil {
 		return err
 	}
@@ -1262,11 +1344,7 @@ func updateModel(model *Model, exec Executor, list []interface{}) (int64, error)
 		}
 		b.Where(where)
 
-		s, err := Serialize(b)
-		if err != nil {
-			return -1, err
-		}
-		res, err := exec.Exec(s)
+		res, err := exec.Exec(b)
 		if err != nil {
 			return -1, err
 		}
