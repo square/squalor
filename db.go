@@ -276,7 +276,8 @@ type DB struct {
 	// errors at DB migration time when new columns are added but the previous version of the binary
 	// is still in use, either actively running or getting started up.
 	//
-	// The default is false.
+	// The default is true that ignores the unmapped columns.
+	// NOTE: Unmapped columns in primary keys are still not allowed.
 	IgnoreUnmappedCols bool
 	Logger             QueryLogger
 	mu                 sync.RWMutex
@@ -289,7 +290,7 @@ func NewDB(db *sql.DB) *DB {
 	return &DB{
 		DB:                 db,
 		AllowStringQueries: true,
-		IgnoreUnmappedCols: false,
+		IgnoreUnmappedCols: true,
 		Logger:             nil,
 		models:             map[reflect.Type]*Model{},
 		mappings:           map[reflect.Type]fieldMap{},
