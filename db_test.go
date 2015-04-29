@@ -66,7 +66,6 @@ func TestDB_WithoutUnmappedColumns(t *testing.T) {
 func TestDB_WithUnmappedColumnsIgnored(t *testing.T) {
 	db := makeTestDB(t, objectsDDLWithUnmappedColumns)
 	defer db.Close()
-	db.IgnoreUnmappedCols = true
 
 	testDB(db, t)
 }
@@ -627,6 +626,7 @@ func TestDBAllowStringQueries(t *testing.T) {
 
 func TestBindModel_FailUnknownColumns(t *testing.T) {
 	db := makeTestDB(t, objectsDDLWithUnmappedColumns)
+	db.IgnoreUnmappedCols = false
 	defer db.Close()
 
 	defer func() {
@@ -646,6 +646,7 @@ func TestBindModel_FailUnknownColumns(t *testing.T) {
 
 func TestSelect_FailOnUnknownColumns(t *testing.T) {
 	db := makeTestDB(t, objectsDDL)
+	db.IgnoreUnmappedCols = false
 	defer db.Close()
 
 	items, err := db.BindModel("objects", Object{})
@@ -673,6 +674,7 @@ func TestSelect_FailOnUnknownColumns(t *testing.T) {
 
 func TestStructScan_FailOnUnknownColumns(t *testing.T) {
 	db := makeTestDB(t, objectsDDL)
+	db.IgnoreUnmappedCols = false
 	defer db.Close()
 
 	items, err := db.BindModel("objects", Object{})
