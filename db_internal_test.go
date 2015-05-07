@@ -112,7 +112,17 @@ func (r *recordingExecutor) QueryRow(query interface{}, args ...interface{}) *Ro
 	if len(args) != 0 {
 		panic(fmt.Errorf("expected 0 args: %+v", args))
 	}
-	r.query = append(r.query, query.(string))
+
+	if s, ok := query.(string); ok {
+		r.query = append(r.query, s)
+	} else if serializer, ok := query.(Serializer); ok {
+		s, err := Serialize(serializer)
+		if err != nil {
+			return &Row{err: err}
+		}
+		r.query = append(r.query, s)
+	}
+
 	return &Row{err: fmt.Errorf("ignored")}
 }
 

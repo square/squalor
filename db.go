@@ -1151,18 +1151,13 @@ func getObject(db *DB, exec Executor, obj interface{}, keys []interface{}) error
 	}
 	q.Where(where)
 
-	s, err := Serialize(&q)
-	if err != nil {
-		return err
-	}
-
 	v := reflect.Indirect(reflect.ValueOf(obj))
 	dest := make([]interface{}, len(model.get.traversals))
 	for i, traversal := range model.get.traversals {
 		dest[i] = v.FieldByIndex(traversal).Addr().Interface()
 	}
 
-	if err := exec.QueryRow(s).Scan(dest...); err != nil {
+	if err := exec.QueryRow(&q).Scan(dest...); err != nil {
 		return err
 	}
 
