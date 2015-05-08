@@ -377,6 +377,10 @@ func (db *DB) BindModel(name string, obj interface{}) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	if table.PrimaryKey == nil {
+		return nil, fmt.Errorf("%s: table has no primary key", name)
+	}
+
 	m, err = newModel(db, t, *table)
 	if err != nil {
 		return nil, err

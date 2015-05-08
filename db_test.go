@@ -50,6 +50,15 @@ ALTER TABLE objects ADD COLUMN (
   unmapped VARBINARY(767) NULL
 )`
 
+const objectsDDLWithoutPrimaryKey = `
+CREATE TABLE objects (
+  user_id     BIGINT         NOT NULL,
+  object_id   VARBINARY(767) NOT NULL,
+  value       BLOB           NULL,
+  timestamp   BIGINT         NULL,
+  INDEX (user_id, timestamp)
+)`
+
 const usersDDL = `
 CREATE TABLE users (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -642,6 +651,19 @@ func TestBindModel_FailUnknownColumns(t *testing.T) {
 
 	db.BindModel("objects", Object{})
 	t.Fatal("Expected panic. Should not reach here")
+}
+
+func TestBindModel_FailNoPrimaryKey(t *testing.T) {
+	db := makeTestDB(t, objectsDDLWithoutPrimaryKey)
+	defer db.Close()
+
+	_, err := db.BindModel("objects", Object{})
+	str := "objects: table has no primary key"
+	if err == nil {
+		t.Fatalf("Expected missing primary key error, but got nil")
+	} else if err.Error() != str {
+		t.Fatalf("Unexpected error `%s`, expected `%s`", err, str)
+	}
 }
 
 func TestSelect_FailOnUnknownColumns(t *testing.T) {
