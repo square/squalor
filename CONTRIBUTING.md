@@ -15,3 +15,27 @@ Before your code can be accepted into the project you must also sign the
 
 
  [1]: https://spreadsheets.google.com/spreadsheet/viewform?formkey=dDViT2xzUHAwRkI3X3k5Z0lQM091OGc6MQ&ndplr=1
+
+
+## Setting Up
+
+Start by installing [Docker](https://docs.docker.com/installation/). And ss of
+now, the setup sequence is:
+
+    boot2docker init
+    boot2docker start
+    boot2docker shellinit
+    eval "$(boot2docker shellinit)"
+
+And verify everything works:
+
+    docker run hello-world
+
+Then you'll need a few libraries:
+
+    go get github.com/coopernurse/gorp
+    go get github.com/go-sql-driver/mysql
+
+And you're ready to rock:
+
+    ./integration_test.sh

@@ -586,14 +586,41 @@ func (db *DB) Begin() (*Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Tx{tx, db}, nil
+	return &Tx{Tx: tx, DB: db}, nil
 }
 
 // Tx is a wrapper around sql.Tx which also implements the
 // squalor.Executor interface.
 type Tx struct {
 	*sql.Tx
-	DB *DB
+	DB        *DB
+	preHooks  []PreCommit
+	postHooks []PostCommit
+}
+
+// AddPreCommitHook adds a pre-commit hook to this transaction.
+func (tx *Tx) AddPreCommitHook(pre PreCommit) {
+	tx.preHooks = append(tx.preHooks, pre)
+}
+
+// AddPostCommitHook adds a post-commit hook to this transaction.
+func (tx *Tx) AddPostCommitHook(post PostCommit) {
+	tx.postHooks = append(tx.postHooks, post)
+}
+
+// Commit is a wrapper around sql.Tx.Commit() which also provides pre- and post-
+// commit hooks.
+func (tx *Tx) Commit() error {
+	for _, pre := range tx.preHooks {
+		if err := pre(tx); err != nil {
+			return err
+		}
+	}
+	err := tx.Tx.Commit()
+	for _, post := range tx.postHooks {
+		post(err)
+	}
+	return err
 }
 
 // Exec executes a query that doesn't return rows. For example: an

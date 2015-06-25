@@ -180,3 +180,10 @@ func (upsertHooks) post(obj interface{}, exec Executor) error {
 	}
 	return nil
 }
+
+// PreCommit will be executed before a squalor.Tx.Commit().
+type PreCommit func(*Tx) error
+
+// PostCommit will be executed after a squalor.Tx.Commit(). The hook is provided
+// with the result of the commit. The hook itself cannot fail.
+type PostCommit func(error)
