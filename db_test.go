@@ -16,6 +16,7 @@ package squalor
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -720,6 +721,56 @@ func TestStructScan_FailOnUnknownColumns(t *testing.T) {
 	str := "unable to find mapping for column 'unmapped'"
 	if !strings.Contains(err.Error(), str) {
 		t.Fatalf("Expected error to contain \"%s\", but got \"%s\"", str, err)
+	}
+}
+
+func TestCommitHooks_Normal(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add hooks
+	var pre, post int
+	tx.AddPreCommitHook(func(*Tx) error { pre += 7; return nil })
+	tx.AddPostCommitHook(func(error) { post += 11 })
+
+	// Commit
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Check
+	if pre != 7 {
+		t.Errorf("incorrect pre count: expecting %d, found %d", 7, pre)
+	}
+	if post != 11 {
+		t.Errorf("incorrect post count: expecting %d, found %d", 11, pre)
+	}
+}
+
+func TestCommitHooks_PreFails(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add hooks
+	tx.AddPreCommitHook(func(*Tx) error { return errors.New("oh no!") })
+
+	// Commit
+	err = tx.Commit()
+	if err == nil {
+		t.Fatalf("expected Commit to fail, instead it succeeded")
+	}
+	if err.Error() != "oh no!" {
+		t.Fatalf("expected err to be 'oh no!', was: %s", err)
 	}
 }
 
