@@ -19,12 +19,11 @@ Before your code can be accepted into the project you must also sign the
 
 ## Setting Up
 
-Start by installing [Docker](https://docs.docker.com/installation/). And ss of
+Start by installing [Docker](https://docs.docker.com/installation/). And as of
 now, the setup sequence is:
 
     boot2docker init
     boot2docker start
-    boot2docker shellinit
     eval "$(boot2docker shellinit)"
 
 And verify everything works:
@@ -33,8 +32,7 @@ And verify everything works:
 
 Then you'll need a few libraries:
 
-    go get github.com/coopernurse/gorp
-    go get github.com/go-sql-driver/mysql
+    go get -t
 
 And you're ready to rock:
 
