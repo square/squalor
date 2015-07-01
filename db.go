@@ -450,7 +450,8 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 	}
 
 	start := time.Now()
-	result, err := db.DB.Exec(querystr, args...)
+	argsConverted := argsConvert(args)
+	result, err := db.DB.Exec(querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	return result, err
@@ -495,7 +496,8 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	}
 
 	start := time.Now()
-	rows, err := db.DB.Query(querystr, args...)
+	argsConverted := argsConvert(args)
+	rows, err := db.DB.Query(querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	if err != nil {
@@ -519,7 +521,8 @@ func (db *DB) QueryRow(query interface{}, args ...interface{}) *Row {
 	}
 
 	start := time.Now()
-	rows, err := db.DB.Query(querystr, args...)
+	argsConverted := argsConvert(args)
+	rows, err := db.DB.Query(querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: db}, err: err}
@@ -636,7 +639,8 @@ func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 	}
 
 	start := time.Now()
-	result, err := tx.Tx.Exec(querystr, args...)
+	argsConverted := argsConvert(args)
+	result, err := tx.Tx.Exec(querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	return result, err
@@ -693,7 +697,8 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	}
 
 	start := time.Now()
-	rows, err := tx.Tx.Query(querystr, args...)
+	argsConverted := argsConvert(args)
+	rows, err := tx.Tx.Query(querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	if err != nil {
@@ -717,7 +722,8 @@ func (tx *Tx) QueryRow(query interface{}, args ...interface{}) *Row {
 	}
 
 	start := time.Now()
-	rows, err := tx.Tx.Query(querystr, args...)
+	argsConverted := argsConvert(args)
+	rows, err := tx.Tx.Query(querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: tx.DB}, err: err}

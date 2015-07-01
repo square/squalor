@@ -774,6 +774,93 @@ func TestCommitHooks_PreFails(t *testing.T) {
 	}
 }
 
+type someTypeAlias string
+
+type someDoublyTypedAlias someTypeAlias
+
+func TestTypeAlias(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+
+	if _, err := db.BindModel("users", User{}); err != nil {
+		t.Fatal(err)
+	}
+	e := &User{ID: 0, Name: "foo"}
+	if err := db.Insert(e); err != nil {
+		t.Fatal(err)
+	}
+
+	// Count using plain old string type
+	count := func(name string) int {
+		var c []int
+		if err := db.Select(&c, "SELECT COUNT(*) FROM users WHERE name = ?", name); err != nil {
+			t.Fatal(err)
+		}
+		return c[0]
+	}
+
+	if count("foo") != 1 {
+		t.Fatalf("should start with one user, named 'foo'")
+	}
+
+	// Exec
+	if _, err := db.Exec("UPDATE users SET name = ?", someTypeAlias("bar")); err != nil {
+		t.Fatalf("failed querying with someTypeAlias: %s", err)
+	}
+
+	if count("bar") != 1 {
+		t.Fatalf("we should have renamed the user to 'bar'")
+	}
+
+	if _, err := db.Exec("UPDATE users SET name = ?", someDoublyTypedAlias("baz")); err != nil {
+		t.Fatalf("failed querying with someTypeAlias: %s", err)
+	}
+
+	if count("baz") != 1 {
+		t.Fatalf("we should have renamed the user to 'baz'")
+	}
+
+	// Select
+	var c []int
+	if err := db.Select(&c, "SELECT COUNT(*) FROM users WHERE name = ?", someTypeAlias("baz")); err != nil {
+		t.Fatal(err)
+	}
+	if c[0] != 1 {
+		t.Fatalf("we should have renamed the user to 'baz', and still find it")
+	}
+
+	// Query
+	row, err := db.Query("SELECT name FROM users WHERE name = ?", someTypeAlias("baz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !row.Next() {
+		t.Fatal("there should be one row to read")
+	}
+	var name string
+	if err := row.Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if name != "baz" {
+		t.Fatalf("we should have renamed the user to 'baz', and still be able to query it")
+	}
+	if err := row.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// QueryRow
+	rowPtr := db.QueryRow("SELECT name FROM users WHERE name = ?", someTypeAlias("baz"))
+	if rowPtr == nil {
+		t.Fatal("there should be one row to read")
+	}
+	if err := rowPtr.Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if name != "baz" {
+		t.Fatalf("we should have renamed the user to 'baz', and still be able to query it")
+	}
+}
+
 type Object struct {
 	UserID    int64  `db:"user_id"`
 	ID        string `db:"object_id"`
