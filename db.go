@@ -450,7 +450,8 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 	}
 
 	start := time.Now()
-	result, err := db.DB.Exec(querystr, args...)
+	argsConverted := argsConvert(args)
+	result, err := db.DB.Exec(querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	return result, err
@@ -495,7 +496,8 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	}
 
 	start := time.Now()
-	rows, err := db.DB.Query(querystr, args...)
+	argsConverted := argsConvert(args)
+	rows, err := db.DB.Query(querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	if err != nil {
@@ -519,7 +521,8 @@ func (db *DB) QueryRow(query interface{}, args ...interface{}) *Row {
 	}
 
 	start := time.Now()
-	rows, err := db.DB.Query(querystr, args...)
+	argsConverted := argsConvert(args)
+	rows, err := db.DB.Query(querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: db}, err: err}
@@ -636,7 +639,8 @@ func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 	}
 
 	start := time.Now()
-	result, err := tx.Tx.Exec(querystr, args...)
+	argsConverted := argsConvert(args)
+	result, err := tx.Tx.Exec(querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	return result, err
@@ -693,7 +697,8 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	}
 
 	start := time.Now()
-	rows, err := tx.Tx.Query(querystr, args...)
+	argsConverted := argsConvert(args)
+	rows, err := tx.Tx.Query(querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	if err != nil {
@@ -717,7 +722,8 @@ func (tx *Tx) QueryRow(query interface{}, args ...interface{}) *Row {
 	}
 
 	start := time.Now()
-	rows, err := tx.Tx.Query(querystr, args...)
+	argsConverted := argsConvert(args)
+	rows, err := tx.Tx.Query(querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: tx.DB}, err: err}
@@ -777,6 +783,13 @@ func (tx *Tx) Upsert(list ...interface{}) error {
 	return insertObjects(tx.DB, tx, getUpsert, list)
 }
 
+// setTyp holds a locus to set a value into, after it has been converted to
+// the specified type.
+type setTyp struct {
+	set reflect.Value
+	typ reflect.Type
+}
+
 // Rows is a wrapper around sql.Rows which adds a StructScan method.
 type Rows struct {
 	*sql.Rows
@@ -785,6 +798,7 @@ type Rows struct {
 	zero    reflect.Value
 	value   reflect.Value
 	dest    []interface{}
+	convert map[int]setTyp
 }
 
 // StructScan copies the columns in the current row into the struct
@@ -841,7 +855,24 @@ func (r *Rows) initScan(t reflect.Type) error {
 				r.dest[i] = new(sql.RawBytes)
 				continue
 			}
-			r.dest[i] = r.value.FieldByIndex(field.Index).Addr().Interface()
+			subValue := r.value.FieldByIndex(field.Index)
+			if !baseTypes[subValue.Type()] && baseKinds[subValue.Kind()] {
+				// Type alias require special handling. We create a locus to store the
+				// raw value, and later convert and set this value in the field. This
+				// odd maneuver is required because database/sql Scan implementation
+				// inconsistently handles type aliases.
+				locus := reflect.New(kindsToBaseType[subValue.Kind()])
+				r.dest[i] = locus.Elem().Addr().Interface()
+				if r.convert == nil {
+					r.convert = make(map[int]setTyp)
+				}
+				r.convert[i] = setTyp{
+					set: subValue.Addr().Elem(),
+					typ: subValue.Type(),
+				}
+			} else {
+				r.dest[i] = subValue.Addr().Interface()
+			}
 		}
 	}
 	r.zero = reflect.Zero(t)
@@ -851,7 +882,13 @@ func (r *Rows) initScan(t reflect.Type) error {
 func (r *Rows) scanValue() error {
 	// Clear out our value object in preparation for the scan.
 	r.value.Set(r.zero)
-	return r.Rows.Scan(r.dest...)
+	if err := r.Rows.Scan(r.dest...); err != nil {
+		return err
+	}
+	for i, c := range r.convert {
+		c.set.Set(reflect.ValueOf(r.dest[i]).Elem().Convert(c.typ))
+	}
+	return nil
 }
 
 // Row is a wrapper around sql.Row which adds a StructScan method.
@@ -1184,12 +1221,34 @@ func getObject(db *DB, exec Executor, obj interface{}, keys []interface{}) error
 
 	v := reflect.Indirect(reflect.ValueOf(obj))
 	dest := make([]interface{}, len(model.get.traversals))
+	var convert map[int]setTyp
 	for i, traversal := range model.get.traversals {
-		dest[i] = v.FieldByIndex(traversal).Addr().Interface()
+		subValue := v.FieldByIndex(traversal)
+		if !baseTypes[subValue.Type()] && baseKinds[subValue.Kind()] {
+			// Type alias require special handling. We create a locus to store the
+			// raw value, and later convert and set this value in the field. This
+			// odd maneuver is required because database/sql Scan implementation
+			// inconsistently handles type aliases.
+			locus := reflect.New(kindsToBaseType[subValue.Kind()])
+			dest[i] = locus.Elem().Addr().Interface()
+			if convert == nil {
+				convert = make(map[int]setTyp)
+			}
+			convert[i] = setTyp{
+				set: subValue.Addr().Elem(),
+				typ: subValue.Type(),
+			}
+		} else {
+			dest[i] = subValue.Addr().Interface()
+		}
 	}
 
 	if err := exec.QueryRow(&q).Scan(dest...); err != nil {
 		return err
+	}
+
+	for i, c := range convert {
+		c.set.Set(reflect.ValueOf(dest[i]).Elem().Convert(c.typ))
 	}
 
 	return model.get.hooks.post(obj, exec)

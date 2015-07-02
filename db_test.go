@@ -940,7 +940,7 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 		t.Fatalf("should have one user, named 'foo'")
 	}
 	if string(users[0].Name) != "foo" {
-		t.Fatalf("our user should be named 'foo' years, was '%s'", users[0].Name)
+		t.Fatalf("our user should be named 'foo', was '%s'", users[0].Name)
 	}
 	if int(users[0].Age) != 123 {
 		t.Fatalf("our user should be aged 123 years, was %d", users[0].Age)
@@ -959,7 +959,7 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(queriedUser.Name) != "foo" {
-		t.Fatalf("our user should be named 'foo' years, was '%s'", queriedUser.Name)
+		t.Fatalf("our user should be named 'foo', was '%s'", queriedUser.Name)
 	}
 	if int(queriedUser.Age) != 123 {
 		t.Fatalf("our user should be aged 123 years, was %d", queriedUser.Age)
@@ -977,6 +977,19 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 	}
 	if int(queryRowUser.Age) != 123 {
 		t.Fatalf("our user should be aged 123 years, was %d", queryRowUser.Age)
+	}
+
+	// Get
+	queriedUser.Age = 0
+	queriedUser.Name = someTypeAlias("")
+	if err := db.Get(&queriedUser, queriedUser.ID); err != nil {
+		t.Fatal(err)
+	}
+	if string(queriedUser.Name) != "foo" {
+		t.Fatalf("our user should be named 'foo', was '%s'", queriedUser.Name)
+	}
+	if int(queriedUser.Age) != 123 {
+		t.Fatalf("our user should be aged 123 years, was %d", queriedUser.Age)
 	}
 }
 

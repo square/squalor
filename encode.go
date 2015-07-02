@@ -13,6 +13,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"reflect"
 	"strconv"
 	"time"
 )
@@ -50,6 +51,12 @@ func encodeSQLValue(w io.Writer, arg interface{}) error {
 	// into sql.Values.
 	dv, err := driver.DefaultParameterConverter.ConvertValue(arg)
 	if err != nil {
+		// We may be in the presence of a type alias not supported by the
+		// database/driver DefaultParameterConverter. Special handling.
+		value := reflect.ValueOf(arg)
+		if baseKinds[value.Kind()] {
+			return encodeSQLValue(w, asKind(value))
+		}
 		return err
 	}
 	switch v := dv.(type) {
