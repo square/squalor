@@ -777,14 +777,15 @@ func TestCommitHooks_PreFails(t *testing.T) {
 	}
 }
 
-type fooWhenValued struct {
-}
+// Type alias, and a driver.Valuer. Ensuring that driver.Valuer has precedence.
+type fooWhenValued string
 
 func (_ *fooWhenValued) Value() (driver.Value, error) {
 	return "foo", nil
 }
 
-var _ driver.Valuer = &fooWhenValued{}
+var bar fooWhenValued = "bar"
+var _ driver.Valuer = &bar
 
 func TestDriverValuerAsArg(t *testing.T) {
 	// Setup db, and insert one user named foo.
@@ -799,7 +800,7 @@ func TestDriverValuerAsArg(t *testing.T) {
 
 	// Select
 	var users []User
-	if err := db.Select(&users, "SELECT * FROM users WHERE name = ?", &fooWhenValued{}); err != nil {
+	if err := db.Select(&users, "SELECT * FROM users WHERE name = ?", &bar); err != nil {
 		t.Fatal(err)
 	}
 	if len(users) != 1 {
