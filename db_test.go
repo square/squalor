@@ -16,6 +16,7 @@ package squalor
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"reflect"
@@ -771,6 +772,39 @@ func TestCommitHooks_PreFails(t *testing.T) {
 	}
 	if err.Error() != "oh no!" {
 		t.Fatalf("expected err to be 'oh no!', was: %s", err)
+	}
+}
+
+type fooWhenValued struct {
+}
+
+func (_ *fooWhenValued) Value() (driver.Value, error) {
+	return "foo", nil
+}
+
+var _ driver.Valuer = &fooWhenValued{}
+
+func TestDriverValuerAsArg(t *testing.T) {
+	// Setup db, and insert one user named foo.
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Insert(&User{Name: "foo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Select
+	var users []User
+	if err := db.Select(&users, "SELECT * FROM users WHERE name = ?", &fooWhenValued{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("expected one user, found %d", len(users))
+	}
+	if users[0].Name != "foo" {
+		t.Fatalf("expected name to be 'foo', found '%s'", users[0].Name)
 	}
 }
 
