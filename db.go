@@ -464,7 +464,7 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 // Returns an error if the object type has not been registered with
 // BindModel.
 func (db *DB) Get(dest interface{}, keys ...interface{}) error {
-	return getObject(db, db, dest, keys)
+	return getObjectByKeys(db, db, dest, keys)
 }
 
 // Insert runs a batched SQL INSERT statement, grouping the objects by
@@ -560,6 +560,20 @@ func (db *DB) Replace(list ...interface{}) error {
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (db *DB) Select(dest interface{}, q interface{}, args ...interface{}) error {
 	return selectObjects(db, dest, q, args)
+}
+
+// SelectOne runs an arbitrary SQL query, unmarshalling the matching row
+// into the the struct specified by dest. Args are the
+// parameters to the SQL query. The query is expected to return at most one row.
+//
+// It is ok for dest to refer to a struct that has not been bound to a
+// table. This allows querying for values that return transient
+// columnts. For example, "SELECT count(*) ..." will return a "count"
+// column.
+//
+// dest must be a pointer to a struct.
+func (db *DB) SelectOne(dest interface{}, query interface{}, args ...interface{}) error {
+	return getObjectByQuery(db, db, dest, query, args...)
 }
 
 // Update runs a SQL UPDATE statement for each element in list. List
@@ -665,7 +679,7 @@ func (tx *Tx) Delete(list ...interface{}) (int64, error) {
 // Returns an error if the object type has not been registered with
 // BindModel.
 func (tx *Tx) Get(dest interface{}, keys ...interface{}) error {
-	return getObject(tx.DB, tx, dest, keys)
+	return getObjectByKeys(tx.DB, tx, dest, keys)
 }
 
 // Insert runs a batched SQL INSERT statement, grouping the objects by
@@ -761,6 +775,20 @@ func (tx *Tx) Replace(list ...interface{}) error {
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (tx *Tx) Select(dest interface{}, q interface{}, args ...interface{}) error {
 	return selectObjects(tx, dest, q, args)
+}
+
+// SelectOne runs an arbitrary SQL query, unmarshalling the matching row
+// into the the struct specified by dest. Args are the
+// parameters to the SQL query. The query is expected to return at most one row.
+//
+// It is ok for dest to refer to a struct that has not been bound to a
+// table. This allows querying for values that return transient
+// columnts. For example, "SELECT count(*) ..." will return a "count"
+// column.
+//
+// dest must be a pointer to a struct.
+func (tx *Tx) SelectOne(dest interface{}, query interface{}, args ...interface{}) error {
+	return getObjectByQuery(tx.DB, tx, dest, query, args...)
 }
 
 // Update runs a SQL UPDATE statement for each element in list. List
@@ -1191,7 +1219,38 @@ func deleteObjects(db *DB, exec Executor, list []interface{}) (int64, error) {
 	return count, nil
 }
 
-func getObject(db *DB, exec Executor, obj interface{}, keys []interface{}) error {
+func getObjectByQuery(db *DB, exec Executor, obj interface{}, query interface{}, args ...interface{}) error {
+	return getObject(db, exec, obj, func(model Model) (interface{}, []interface{}, error) {
+		return query, args, nil
+	})
+}
+
+func getObjectByKeys(db *DB, exec Executor, obj interface{}, keys []interface{}) error {
+	getQuery := func(model Model) (interface{}, []interface{}, error) {
+		q := *model.get.selectBuilder
+		var where BoolExprBuilder
+		for i := range model.get.keyColumns {
+			e := model.get.keyColumns[i].Eq(keys[i])
+			if i == 0 {
+				where = e
+			} else {
+				where = where.And(e)
+			}
+		}
+		q.Where(where)
+
+		if len(keys) != len(model.get.keyColumns) {
+			return nil, nil, fmt.Errorf("incorrect keys specified %d != %d",
+				len(keys), len(model.get.keyColumns))
+		}
+
+		return &q, nil, nil
+	}
+	return getObject(db, exec, obj, getQuery)
+}
+
+func getObject(db *DB, exec Executor, obj interface{},
+	getQuery func(model Model) (interface{}, []interface{}, error)) error {
 	objT := reflect.TypeOf(obj)
 	if objT.Kind() != reflect.Ptr {
 		return fmt.Errorf("obj must be a pointer: %T", obj)
@@ -1202,22 +1261,10 @@ func getObject(db *DB, exec Executor, obj interface{}, keys []interface{}) error
 		return err
 	}
 
-	if len(keys) != len(model.get.keyColumns) {
-		return fmt.Errorf("incorrect keys specified %d != %d",
-			len(keys), len(model.get.keyColumns))
+	query, args, err := getQuery(*model)
+	if err != nil {
+		return err
 	}
-
-	q := *model.get.selectBuilder
-	var where BoolExprBuilder
-	for i := range model.get.keyColumns {
-		e := model.get.keyColumns[i].Eq(keys[i])
-		if i == 0 {
-			where = e
-		} else {
-			where = where.And(e)
-		}
-	}
-	q.Where(where)
 
 	v := reflect.Indirect(reflect.ValueOf(obj))
 	dest := make([]interface{}, len(model.get.traversals))
@@ -1243,7 +1290,7 @@ func getObject(db *DB, exec Executor, obj interface{}, keys []interface{}) error
 		}
 	}
 
-	if err := exec.QueryRow(&q).Scan(dest...); err != nil {
+	if err := exec.QueryRow(query, args...).Scan(dest...); err != nil {
 		return err
 	}
 
