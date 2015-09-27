@@ -100,7 +100,8 @@ func (m fieldMap) getTraversals(names []string) [][]int {
 	return traversals
 }
 
-func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols bool) []*Column {
+func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols, ignoreMissingCols bool) []*Column {
+	mapped := make(map[string]bool)
 	var mappedColumns []*Column
 	for _, col := range columns {
 		_, ok := m[col.Name]
@@ -111,6 +112,16 @@ func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols bool) [
 			continue
 		}
 		mappedColumns = append(mappedColumns, col)
+		mapped[col.Name] = true
+	}
+	if !ignoreMissingCols && len(mapped) != len(m) {
+		var notMapped []string
+		for name, _ := range m {
+			if !mapped[name] {
+				notMapped = append(notMapped, name)
+			}
+		}
+		panic(fmt.Errorf("model fields '%s' have no corresponding db field", strings.Join(notMapped, ", ")))
 	}
 	return mappedColumns
 }

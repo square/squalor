@@ -52,6 +52,15 @@ ALTER TABLE objects ADD COLUMN (
   unmapped VARBINARY(767) NULL
 )`
 
+const objectsDDLWithMissingColumn = `
+CREATE TABLE objects (
+  user_id     BIGINT         NOT NULL,
+  object_id   VARBINARY(767) NOT NULL,
+  timestamp   BIGINT         NULL,
+  PRIMARY KEY (user_id, object_id),
+  INDEX (user_id, timestamp)
+)`
+
 const objectsDDLWithoutPrimaryKey = `
 CREATE TABLE objects (
   user_id     BIGINT         NOT NULL,
@@ -655,6 +664,34 @@ func TestBindModel_FailUnknownColumns(t *testing.T) {
 
 	db.BindModel("objects", Object{})
 	t.Fatal("Expected panic. Should not reach here")
+}
+
+func TestBindModel_FailMissingColumn(t *testing.T) {
+	db := makeTestDB(t, objectsDDLWithMissingColumn)
+	db.IgnoreMissingCols = false
+	defer db.Close()
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatalf("Expected to recover an error")
+		}
+		str := "model fields 'value' have no corresponding db field"
+		if !strings.Contains(r.(error).Error(), str) {
+			t.Fatalf("Expected error to contain \"%s\", but got \"%s\"", str, r)
+		}
+	}()
+
+	db.BindModel("objects", Object{})
+	t.Fatal("Expected panic. Should not reach here")
+}
+
+func TestBindModel_DoNotFailMissingColumnWhenIgnored(t *testing.T) {
+	db := makeTestDB(t, objectsDDLWithMissingColumn)
+	db.IgnoreMissingCols = true
+	defer db.Close()
+
+	db.BindModel("objects", Object{})
 }
 
 func TestBindModel_FailNoPrimaryKey(t *testing.T) {
