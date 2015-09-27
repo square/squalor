@@ -222,7 +222,11 @@ func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
 		Table:  table,
 		fields: getDBFields(t),
 	}
-	m.mappedColumns = m.fields.getMappedColumns(m.Columns, db.IgnoreUnmappedCols, db.IgnoreMissingCols)
+	mappedColumns, err := m.fields.getMappedColumns(m.Columns, db.IgnoreUnmappedCols, db.IgnoreMissingCols)
+	if err != nil {
+		panic(fmt.Errorf("%s: %s", table.Name, err))
+	}
+	m.mappedColumns = mappedColumns
 	m.mappedColNames = getColumnNames(m.mappedColumns)
 	m.delete = makeDeletePlan(m)
 	m.get = makeGetPlan(m)
