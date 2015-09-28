@@ -100,19 +100,30 @@ func (m fieldMap) getTraversals(names []string) [][]int {
 	return traversals
 }
 
-func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols bool) []*Column {
+func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols, ignoreMissingCols bool) ([]*Column, error) {
+	mapped := make(map[string]bool)
 	var mappedColumns []*Column
 	for _, col := range columns {
 		_, ok := m[col.Name]
 		if !ok {
 			if !ignoreUnmappedCols {
-				panic(fmt.Errorf("db field '%s' has no mapping", col.Name))
+				return nil, fmt.Errorf("db field '%s' has no mapping", col.Name)
 			}
 			continue
 		}
 		mappedColumns = append(mappedColumns, col)
+		mapped[col.Name] = true
 	}
-	return mappedColumns
+	if !ignoreMissingCols && len(mapped) != len(m) {
+		var notMapped []string
+		for name, _ := range m {
+			if !mapped[name] {
+				notMapped = append(notMapped, name)
+			}
+		}
+		return nil, fmt.Errorf("model fields '%s' have no corresponding db field", strings.Join(notMapped, ", "))
+	}
+	return mappedColumns, nil
 }
 
 // deref is Indirect for reflect.Type

@@ -222,7 +222,11 @@ func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
 		Table:  table,
 		fields: getDBFields(t),
 	}
-	m.mappedColumns = m.fields.getMappedColumns(m.Columns, db.IgnoreUnmappedCols)
+	mappedColumns, err := m.fields.getMappedColumns(m.Columns, db.IgnoreUnmappedCols, db.IgnoreMissingCols)
+	if err != nil {
+		panic(fmt.Errorf("%s: %s", table.Name, err))
+	}
+	m.mappedColumns = mappedColumns
 	m.mappedColNames = getColumnNames(m.mappedColumns)
 	m.delete = makeDeletePlan(m)
 	m.get = makeGetPlan(m)
@@ -271,6 +275,12 @@ func (ss stringSerializer) Serialize(w Writer) error {
 type DB struct {
 	*sql.DB
 	AllowStringQueries bool
+	// Whether to ignore missing columns referenced in models for the various DB
+	// function calls such as StructScan, Select, Insert, BindModel, etc.
+	//
+	// The default is false, disallowing models to be bound when missing columns
+	// are detected to avoid run time surprises (e.g. fields not being saved).
+	IgnoreMissingCols bool
 	// Whether to ignore unmapped columns for the various DB function calls such as StructScan,
 	// Select, Insert, BindModel, etc. When set to true, it can suppress column mapping validation
 	// errors at DB migration time when new columns are added but the previous version of the binary
@@ -291,6 +301,7 @@ func NewDB(db *sql.DB) *DB {
 		DB:                 db,
 		AllowStringQueries: true,
 		IgnoreUnmappedCols: true,
+		IgnoreMissingCols:  false,
 		Logger:             nil,
 		models:             map[reflect.Type]*Model{},
 		mappings:           map[reflect.Type]fieldMap{},
