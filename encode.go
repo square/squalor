@@ -91,7 +91,7 @@ func encodeSQLValue(w io.Writer, arg interface{}) error {
 		}
 		return encodeSQLBytes(w, v)
 	case time.Time:
-		_, err := io.WriteString(w, v.Format("'2006-01-02 15:04:05'"))
+		_, err := io.WriteString(w, v.Format("'2006-01-02 15:04:05.999999'"))
 		return err
 	}
 	return fmt.Errorf("unsupported type %T: %v", arg, arg)
