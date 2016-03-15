@@ -253,7 +253,7 @@ func TestDBSelectAllStatements(t *testing.T) {
 			"SELECT `multi`.`a`, `multi`.`b`, `multi`.`c`, `multi`.`d` FROM `multi`",
 		},
 		{&singleColWithUnmapped{},
-			"SELECT `single_with_unmapped`.`a`, `single_with_unmapped`.`b` " +
+			"SELECT `single_with_unmapped`.`a`, `single_with_unmapped`.`b`, `single_with_unmapped`.`unmapped` " +
 				"FROM `single_with_unmapped`",
 		},
 	}
@@ -266,6 +266,41 @@ func TestDBSelectAllStatements(t *testing.T) {
 			continue
 		}
 		recorder.QueryRow(model.Select(model.All()))
+		if !reflect.DeepEqual([]string{c.expected}, recorder.query) {
+			t.Errorf("Expected %+v, but got %+v", c.expected, recorder.query)
+		}
+	}
+}
+
+func TestDBSelectAllMappedStatements(t *testing.T) {
+	// Test that the constructed SELECT statements match our
+	// expectations.
+	db := newTestStatementsDB(t)
+
+	testCases := []struct {
+		obj      interface{}
+		expected string
+	}{
+		{&singleCol{},
+			"SELECT `single`.`a`, `single`.`b` FROM `single`",
+		},
+		{&multiCol{},
+			"SELECT `multi`.`a`, `multi`.`b`, `multi`.`c`, `multi`.`d` FROM `multi`",
+		},
+		{&singleColWithUnmapped{},
+			"SELECT `single_with_unmapped`.`a`, `single_with_unmapped`.`b` " +
+				"FROM `single_with_unmapped`",
+		},
+	}
+
+	for _, c := range testCases {
+		recorder := &recordingExecutor{DB: db}
+		model, err := db.getModel(deref(reflect.TypeOf(c.obj)))
+		if err != nil {
+			t.Errorf("Unable to find model for %v: %v", c.obj, err)
+			continue
+		}
+		recorder.QueryRow(model.Select(model.AllMapped()))
 		if !reflect.DeepEqual([]string{c.expected}, recorder.query) {
 			t.Errorf("Expected %+v, but got %+v", c.expected, recorder.query)
 		}
