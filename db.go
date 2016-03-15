@@ -87,7 +87,7 @@ type getPlan struct {
 
 func makeGetPlan(m *Model) getPlan {
 	p := getPlan{}
-	p.selectBuilder = m.selectAll()
+	p.selectBuilder = m.Select(m.AllMapped())
 	p.traversals = m.fields.getTraversals(m.mappedColNames)
 
 	p.keyColumns = make([]ValExprBuilder, len(m.PrimaryKey.Columns))
@@ -237,8 +237,18 @@ func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
 	return m, nil
 }
 
-func (m *Model) selectAll() *SelectBuilder {
-	return m.Select(m.C(m.mappedColNames...))
+// All builds a val expression to select all columns mapped by the model.
+func (m *Model) AllMapped() ValExprBuilder {
+	return m.C(m.mappedColNames...)
+}
+
+// All builds a val expression to select all columns on the model's Table.
+// WARNING: This is probably not the method you want. Call AllMapped() instead.
+func (m *Model) All() ValExprBuilder {
+	if m.db.IgnoreUnmappedCols {
+		fmt.Print("WARNING: Calling All() on a model will include unmapped columns if they are present.")
+	}
+	return m.Table.All()
 }
 
 func getColumnNames(columns []*Column) []string {
