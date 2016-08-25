@@ -83,6 +83,33 @@ func TestEmbedded(t *testing.T) {
 	}
 }
 
+func TestPrivate(t *testing.T) {
+	type foo struct {
+		A int64
+	}
+
+	type Bar struct {
+		foo
+		B int64
+	}
+
+	z := Bar{}
+	z.A = 1
+	z.B = 2
+	zv := reflect.ValueOf(z)
+
+	m := getMapping(reflect.TypeOf(z), "", nil)
+
+	v := fieldByName(m, zv, "A")
+	if v.Int() != z.A {
+		t.Errorf("Expecting %d, got %d", z.A, v.Int())
+	}
+	v = fieldByName(m, zv, "B")
+	if v.Int() != z.B {
+		t.Errorf("Expecting %d, got %d", z.B, v.Int())
+	}
+}
+
 func TestMapping(t *testing.T) {
 	type Foo struct {
 		A int
