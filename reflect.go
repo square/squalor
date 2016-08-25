@@ -42,21 +42,21 @@ func getMapping(t reflect.Type, tagName string, mapFunc func(string) string) fie
 		for fieldPos := 0; fieldPos < tq.t.NumField(); fieldPos++ {
 			f := tq.t.Field(fieldPos)
 
+			name := f.Tag.Get(tagName)
+
+			// Breadth first search of untagged anonymous embedded structs.
+			if f.Anonymous && f.Type.Kind() == reflect.Struct && name == "" {
+				queue = append(queue, typeQueue{deref(f.Type), appendIndex(tq.p, fieldPos)})
+				continue
+			}
+
 			// Skip unexported fields.
 			if len(f.PkgPath) != 0 {
 				continue
 			}
 
-			name := f.Tag.Get(tagName)
-
 			// If the name is "-", disabled via a tag, skip it.
 			if name == "-" {
-				continue
-			}
-
-			// Breadth first search of untagged anonymous embedded structs.
-			if f.Anonymous && f.Type.Kind() == reflect.Struct && name == "" {
-				queue = append(queue, typeQueue{deref(f.Type), appendIndex(tq.p, fieldPos)})
 				continue
 			}
 
