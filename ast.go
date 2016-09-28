@@ -1096,6 +1096,8 @@ func (node *ColName) Serialize(w Writer) error {
 	return quoteName(w, node.Name)
 }
 
+// note: quoteName does not escape s. quoteName is indirectly
+// called by builder.go, which checks that column/table names exist.
 func quoteName(w io.Writer, s string) error {
 	if _, err := w.Write(astBackquote); err != nil {
 		return err
