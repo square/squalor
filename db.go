@@ -383,6 +383,8 @@ func (db *DB) getSerializer(query interface{}) (Serializer, error) {
 // must bind the model for any object you wish to perform operations
 // on. It is an error to bind the same model type more than once and a
 // single model type can only be bound to a single table.
+// note: name does not get escaped. The libary assumes the parameter
+// is a literal string and is safe.
 func (db *DB) BindModel(name string, obj interface{}) (*Model, error) {
 	t := deref(reflect.TypeOf(obj))
 
