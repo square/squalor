@@ -24,6 +24,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 // ErrMixedAutoIncrIDs is returned when attempting to insert multiple
@@ -47,8 +49,22 @@ type Executor interface {
 	Upsert(list ...interface{}) error
 }
 
-var _ Executor = &DB{}
-var _ Executor = &Tx{}
+// ExecutorContext extends the Executor interface by allowing a Context object to be supplied by
+// the code issuing a query, and later accessed within a QueryLogger.
+type ExecutorContext interface {
+	Executor
+
+	// Returns an Executor that is equivalent to this Executor, expect that the
+	// returned Executor's GetContext() function will return the supplied Context.
+	// This Executor is unchanged. The supplied Context must not be nil.
+	WithContext(ctx context.Context) ExecutorContext
+	// Returns the Context supplied when this Executor was created by WithContext,
+	// or Context.Background() if WithContext was never called.
+	GetContext() context.Context
+}
+
+var _ ExecutorContext = &DB{}
+var _ ExecutorContext = &Tx{}
 
 func writeStrings(buf *bytes.Buffer, strs ...string) {
 	for _, s := range strs {
@@ -299,6 +315,7 @@ type DB struct {
 	// The default is true that ignores the unmapped columns.
 	// NOTE: Unmapped columns in primary keys are still not allowed.
 	IgnoreUnmappedCols bool
+	Context            context.Context
 	Logger             QueryLogger
 	mu                 sync.RWMutex
 	models             map[reflect.Type]*Model
@@ -312,6 +329,7 @@ func NewDB(db *sql.DB) *DB {
 		AllowStringQueries: true,
 		IgnoreUnmappedCols: true,
 		IgnoreMissingCols:  false,
+		Context:            context.Background(),
 		Logger:             nil,
 		models:             map[reflect.Type]*Model{},
 		mappings:           map[reflect.Type]fieldMap{},
@@ -425,6 +443,19 @@ func (db *DB) MustBindModel(name string, obj interface{}) *Model {
 		panic(fmt.Errorf("%s: unable to bind model: %s", name, err))
 	}
 	return model
+}
+
+func (db *DB) WithContext(ctx context.Context) ExecutorContext {
+	if ctx == nil {
+		panic(fmt.Errorf("Nil Context passed to Executor.WithContext"))
+	}
+	newDB := *db
+	newDB.Context = ctx
+	return &newDB
+}
+
+func (db *DB) GetContext() context.Context {
+	return db.Context
 }
 
 // Delete runs a batched SQL DELETE statement, grouping the objects by
@@ -647,6 +678,21 @@ func (tx *Tx) Commit() error {
 		post(err)
 	}
 	return err
+}
+
+func (tx *Tx) WithContext(ctx context.Context) ExecutorContext {
+	if ctx == nil {
+		panic(fmt.Errorf("Nil Context passed to Executor.WithContext"))
+	}
+	newTx := *tx
+	newDB := *newTx.DB
+	newDB.Context = ctx
+	newTx.DB = &newDB
+	return &newTx
+}
+
+func (tx *Tx) GetContext() context.Context {
+	return tx.DB.GetContext()
 }
 
 // Exec executes a query that doesn't return rows. For example: an
