@@ -22,8 +22,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coopernurse/gorp"
+	"golang.org/x/net/context"
 )
 
 const objectsDDL = `
@@ -811,6 +813,90 @@ func TestCommitHooks_PreFails(t *testing.T) {
 	}
 	if err.Error() != "oh no!" {
 		t.Fatalf("expected err to be 'oh no!', was: %s", err)
+	}
+}
+
+type TestLogger struct {
+	t     *testing.T
+	count int
+}
+
+func (l *TestLogger) Log(query Serializer, exec Executor, executionTime time.Duration, err error) {
+	if execContext, ok := exec.(ExecutorContext); ok {
+		if execContext.GetContext().Value("user_id") != "123" {
+			l.t.Fatalf("Expected context with user_id 123")
+		}
+	} else {
+		l.t.Fatalf("Expected to receive an ExecutorContext instance")
+	}
+	l.count++
+
+}
+
+func TestWithContext(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+
+	logger := &TestLogger{
+		t:     t,
+		count: 0,
+	}
+	db.Logger = logger
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "user_id", "123")
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// This should trigger a call to the TestLogger.
+	tx.WithContext(ctx).Query("SELECT * from objects")
+
+	if logger.count != 1 {
+		t.Fatal("Expected one call to TestLogger.Log")
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWithContextDoesNotMutate(t *testing.T) {
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "user_id", "123")
+
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+
+	if db.GetContext() == nil {
+		t.Fatalf("Expected default non-nil Context on DB")
+	}
+
+	dbWithContext := db.WithContext(ctx)
+	if db.GetContext().Value("user_id") != nil {
+		t.Fatalf("Do not expect .WithContext() to mutate the DB instance")
+	}
+	if dbWithContext.GetContext().Value("user_id") != "123" {
+		t.Fatalf("Expect .WithContext() to return a new DB instance with the context")
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx.GetContext() == nil {
+		t.Fatalf("Expected default non-nil Context on TX")
+	}
+
+	txWithContext := tx.WithContext(ctx)
+	if tx.GetContext().Value("user_id") != nil {
+		t.Fatalf("Do not expect .WithContext() to mutate the TX instance")
+	}
+	if txWithContext.GetContext().Value("user_id") != "123" {
+		t.Fatalf("Expect .WithContext() to return a new TX instance with the context")
 	}
 }
 

@@ -41,6 +41,20 @@ func (l *StandardLogger) Log(query Serializer, exec Executor, executionTime time
 		return
 	}
 
+	// The caller of the query can set a Context object on the database or transaction prior to
+	// issuing the query using the WithContext function, for example:
+	//
+	// tx.WithContext(context.WithValue(ctx, "user_id", userId).Query(...)
+	//
+	// The Context may be obtained inside this function by checking whether the Executor
+	// implements the ExecutorContext interface, and if so calling GetContext on it, for example:
+	//
+	// var userId interface{} = "<unknown>"
+	// if execContext, ok := exec.(ExecutorContext); ok {
+	// 	userId = execContext.GetContext().Value("user_id")
+	// }
+	// l.Printf("[%p] [user_id=%v] %s - `%s` - %s\n", exec, userId, executionTime, querystr, err)
+
 	if err != nil {
 		l.Printf("[%p] %s - `%s` - %s\n", exec, executionTime, querystr, err)
 	} else {
