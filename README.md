@@ -11,65 +11,67 @@ libraries such as
 
 ## Sample code
 
-    package main
+```go
+package main
 
-    import (
-      "database/sql"
-      "fmt"
+import (
+  "database/sql"
+  "fmt"
 
-      _ "github.com/go-sql-driver/mysql"
-      "github.com/square/squalor"
-    )
+  _ "github.com/go-sql-driver/mysql"
+  "github.com/square/squalor"
+)
 
-    type Book struct {
-      ID   int  `db:"id"`
-      Title string `db:"title"`
-      Author int `db:"author"`
-    }
+type Book struct {
+  ID     int    `db:"id"`
+  Title  string `db:"title"`
+  Author int    `db:"author"`
+}
 
-    func main()  {
-      _db, err := sql.Open("mysql", "root@/test_db")
-      panicOnError(err)
+func main() {
+  _db, err := sql.Open("mysql", "root@/test_db")
+  panicOnError(err)
 
-      // Create a test database
-      _, err = _db.Exec("DROP TABLE IF EXISTS books")
-      panicOnError(err)
-      _, err = _db.Exec("CREATE TABLE books (id int primary key, title varchar(255), author int)")
-      panicOnError(err)
+  // Create a test database
+  _, err = _db.Exec("DROP TABLE IF EXISTS books")
+  panicOnError(err)
+  _, err = _db.Exec("CREATE TABLE books (id int primary key, title varchar(255), author int)")
+  panicOnError(err)
 
-      // Bind the Go struct with the database
-      db := squalor.NewDB(_db)
-      book := &Book{}
-      books, err := db.BindModel("books", book)
-      panicOnError(err)
+  // Bind the Go struct with the database
+  db := squalor.NewDB(_db)
+  book := &Book{}
+  books, err := db.BindModel("books", book)
+  panicOnError(err)
 
-      // Sample inserts
-      book = &Book{ID: 1, Title: "Defender Of Greatness", Author: 1234}
-      err = db.Insert(book)
-      panicOnError(err)
+  // Sample inserts
+  book = &Book{ID: 1, Title: "Defender Of Greatness", Author: 1234}
+  err = db.Insert(book)
+  panicOnError(err)
 
-      book = &Book{ID: 2, Title: "Destiny Of Silver", Author: 1234}
-      err = db.Insert(book)
-      panicOnError(err)
+  book = &Book{ID: 2, Title: "Destiny Of Silver", Author: 1234}
+  err = db.Insert(book)
+  panicOnError(err)
 
-      // Sample query by primary key
-      err = db.Get(book, 2)
-      panicOnError(err)
-      fmt.Printf("%v\n", book)
+  // Sample query by primary key
+  err = db.Get(book, 2)
+  panicOnError(err)
+  fmt.Printf("%v\n", book)
 
-      // More complicated query
-      q := books.Select(books.All()).Where(books.C("author").Eq(1234))
-      var results []Book
-      err = db.Select(&results, q)
-      panicOnError(err)
-      fmt.Printf("results: %v\n", results)
-    }
+  // More complicated query
+  q := books.Select(books.All()).Where(books.C("author").Eq(1234))
+  var results []Book
+  err = db.Select(&results, q)
+  panicOnError(err)
+  fmt.Printf("results: %v\n", results)
+}
 
-    func panicOnError(err error) {
-      if err != nil {
-        panic(err)
-      }
-    }
+func panicOnError(err error) {
+  if err != nil {
+    panic(err)
+  }
+}
+```
 
 ## API Documentation
 
