@@ -11,6 +11,7 @@ libraries such as
 
 ## Sample code
 
+```go
     package main
 
     import (
@@ -70,7 +71,7 @@ libraries such as
         panic(err)
       }
     }
-
+```
 ## API Documentation
 
 Full godoc output from the latest code in master is available here:
