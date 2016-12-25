@@ -36,12 +36,12 @@ func (c *Column) String() string {
 	var buf bytes.Buffer
 	fmt.Fprintf(&buf, "%s\t%s", c.Name, c.sqlType)
 	if c.Nullable {
-		fmt.Fprintf(&buf, "\tNULL")
+		fmt.Fprint(&buf, "\tNULL")
 	} else {
-		fmt.Fprintf(&buf, "\tNOT NULL")
+		fmt.Fprint(&buf, "\tNOT NULL")
 	}
 	if c.AutoIncr {
-		fmt.Fprintf(&buf, " AUTO INCREMENT")
+		fmt.Fprint(&buf, " AUTO INCREMENT")
 	}
 	return buf.String()
 }
@@ -91,21 +91,21 @@ type Key struct {
 func (k *Key) String() string {
 	var buf bytes.Buffer
 	if k.Primary {
-		fmt.Fprintf(&buf, "PRIMARY ")
+		fmt.Fprint(&buf, "PRIMARY ")
 	} else if k.Unique {
-		fmt.Fprintf(&buf, "UNIQUE ")
+		fmt.Fprint(&buf, "UNIQUE ")
 	}
-	fmt.Fprintf(&buf, "KEY")
+	fmt.Fprint(&buf, "KEY")
 	if !k.Primary {
 		fmt.Fprintf(&buf, " %s", k.Name)
 	}
-	fmt.Fprintf(&buf, "\t(")
+	fmt.Fprint(&buf, "\t(")
 	var sep string
 	for _, col := range k.Columns {
 		fmt.Fprintf(&buf, "%s%s", sep, col.Name)
 		sep = ","
 	}
-	fmt.Fprintf(&buf, ")")
+	fmt.Fprint(&buf, ")")
 	return buf.String()
 }
 
@@ -172,11 +172,11 @@ func (t *Table) String() string {
 	var buf bytes.Buffer
 	tab := tabwriter.NewWriter(&buf, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(tab, "%s:\n", t.Name)
-	fmt.Fprintf(tab, "  columns:\n")
+	fmt.Fprint(tab, "  columns:\n")
 	for _, col := range t.Columns {
 		fmt.Fprintf(tab, "    %s\n", col)
 	}
-	fmt.Fprintf(tab, "  keys:\n")
+	fmt.Fprint(tab, "  keys:\n")
 	for _, key := range t.Keys {
 		fmt.Fprintf(tab, "    %s\n", key)
 	}

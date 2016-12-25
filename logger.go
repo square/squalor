@@ -36,7 +36,7 @@ type StandardLogger struct {
 }
 
 func (l *StandardLogger) Log(query Serializer, exec Executor, executionTime time.Duration, err error) {
-	querystr, serializeErr := Serialize(query)
+	queryStr, serializeErr := Serialize(query)
 	if serializeErr != nil {
 		return
 	}
@@ -56,8 +56,8 @@ func (l *StandardLogger) Log(query Serializer, exec Executor, executionTime time
 	// l.Printf("[%p] [user_id=%v] %s - `%s` - %s\n", exec, userId, executionTime, querystr, err)
 
 	if err != nil {
-		l.Printf("[%p] %s - `%s` - %s\n", exec, executionTime, querystr, err)
+		l.Printf("[%p] %s - `%s` - %s\n", exec, executionTime, queryStr, err)
 	} else {
-		l.Printf("[%p] %s - `%s`\n", exec, executionTime, querystr)
+		l.Printf("[%p] %s - `%s`\n", exec, executionTime, queryStr)
 	}
 }

@@ -447,7 +447,7 @@ func (db *DB) MustBindModel(name string, obj interface{}) *Model {
 
 func (db *DB) WithContext(ctx context.Context) ExecutorContext {
 	if ctx == nil {
-		panic(fmt.Errorf("Nil Context passed to Executor.WithContext"))
+		panic("Nil Context passed to Executor.WithContext")
 	}
 	newDB := *db
 	newDB.Context = ctx
@@ -498,14 +498,14 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	querystr, err := Serialize(serializer)
+	queryStr, err := Serialize(serializer)
 	if err != nil {
 		return nil, err
 	}
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	result, err := db.DB.Exec(querystr, argsConverted...)
+	result, err := db.DB.Exec(queryStr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	return result, err
@@ -544,14 +544,14 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	if err != nil {
 		return nil, err
 	}
-	querystr, err := Serialize(serializer)
+	queryStr, err := Serialize(serializer)
 	if err != nil {
 		return nil, err
 	}
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	rows, err := db.DB.Query(querystr, argsConverted...)
+	rows, err := db.DB.Query(queryStr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	if err != nil {
@@ -569,14 +569,14 @@ func (db *DB) QueryRow(query interface{}, args ...interface{}) *Row {
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
-	querystr, err := Serialize(serializer)
+	queryStr, err := Serialize(serializer)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	rows, err := db.DB.Query(querystr, argsConverted...)
+	rows, err := db.DB.Query(queryStr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: db}, err: err}
@@ -682,7 +682,7 @@ func (tx *Tx) Commit() error {
 
 func (tx *Tx) WithContext(ctx context.Context) ExecutorContext {
 	if ctx == nil {
-		panic(fmt.Errorf("Nil Context passed to Executor.WithContext"))
+		panic("Nil Context passed to Executor.WithContext")
 	}
 	newTx := *tx
 	newDB := *newTx.DB

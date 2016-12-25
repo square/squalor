@@ -16,6 +16,7 @@ package squalor
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -122,7 +123,7 @@ func (r *recordingExecutor) Exec(stmt interface{}, args ...interface{}) (sql.Res
 			return nil, err
 		}
 	default:
-		return nil, fmt.Errorf("unexpected stmt type")
+		return nil, errors.New("unexpected stmt type")
 	}
 
 	if len(args) != 0 {
@@ -148,7 +149,7 @@ func (r *recordingExecutor) QueryRow(query interface{}, args ...interface{}) *Ro
 		r.query = append(r.query, s)
 	}
 
-	return &Row{err: fmt.Errorf("ignored")}
+	return &Row{err: errors.New("ignored")}
 }
 
 func TestDBDeleteStatements(t *testing.T) {
@@ -229,7 +230,7 @@ func TestDBGetStatements(t *testing.T) {
 	for _, c := range testCases {
 		recorder := &recordingExecutor{DB: db}
 		if err := getObject(db, recorder, c.obj, c.keys); err == nil {
-			t.Fatalf("Expected ignored error, but found success")
+			t.Fatal("Expected ignored error, but found success")
 		}
 		if !reflect.DeepEqual([]string{c.expected}, recorder.query) {
 			t.Errorf("Expected %+v, but got %+v", c.expected, recorder.query)
