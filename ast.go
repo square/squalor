@@ -1243,14 +1243,14 @@ type CaseExpr struct {
 }
 
 func (node *CaseExpr) Serialize(w Writer) error {
-	if _, err := fmt.Fprintf(w, "CASE "); err != nil {
+	if _, err := fmt.Fprint(w, "CASE "); err != nil {
 		return err
 	}
 	if node.Expr != nil {
 		if err := node.Expr.Serialize(w); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, " "); err != nil {
+		if _, err := fmt.Fprint(w, " "); err != nil {
 			return err
 		}
 	}
@@ -1258,22 +1258,22 @@ func (node *CaseExpr) Serialize(w Writer) error {
 		if err := when.Serialize(w); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, " "); err != nil {
+		if _, err := fmt.Fprint(w, " "); err != nil {
 			return err
 		}
 	}
 	if node.Else != nil {
-		if _, err := fmt.Fprintf(w, "ELSE "); err != nil {
+		if _, err := fmt.Fprint(w, "ELSE "); err != nil {
 			return err
 		}
 		if err := node.Else.Serialize(w); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(w, " "); err != nil {
+		if _, err := fmt.Fprint(w, " "); err != nil {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(w, "END")
+	_, err := fmt.Fprint(w, "END")
 	return err
 }
 
@@ -1284,11 +1284,9 @@ type When struct {
 }
 
 func (node *When) Serialize(w Writer) error {
-	fmt.Sprintf("WHEN ")
 	if err := node.Cond.Serialize(w); err != nil {
 		return err
 	}
-	fmt.Sprintf(" THEN ")
 	return node.Val.Serialize(w)
 }
 

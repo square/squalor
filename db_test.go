@@ -112,7 +112,7 @@ func testDB(db *DB, t *testing.T) {
 
 	i := &Object{}
 	if err := db.Get(i, 1, "bar"); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 
 	// Insert.
@@ -121,7 +121,7 @@ func testDB(db *DB, t *testing.T) {
 	i.Value = []byte("hello world")
 	// Non-pointer should fail.
 	if err := db.Insert(*i); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 	// Pointer should succeed.
 	if err := db.Insert(i); err != nil {
@@ -134,7 +134,7 @@ func testDB(db *DB, t *testing.T) {
 	j := &Object{}
 	// Non-pointer should fail.
 	if err := db.Get(*j, 1, "bar"); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 	// Pointer should succeed.
 	if err := db.Get(j, 1, "bar"); err != nil {
@@ -153,7 +153,7 @@ func testDB(db *DB, t *testing.T) {
 	i.Timestamp = &timestamp
 	// Non-pointer should fail.
 	if _, err := db.Update(*i); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 	// Pointer should succeed.
 	if n, err := db.Update(i); err != nil {
@@ -184,7 +184,7 @@ func testDB(db *DB, t *testing.T) {
 	i.Value = []byte("hello again")
 	// Non-pointer should fail.
 	if err := db.Upsert(*i, *i2); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 	// Pointer should succeed.
 	if err := db.Upsert(i, i2); err != nil {
@@ -203,7 +203,7 @@ func testDB(db *DB, t *testing.T) {
 	i2.Value = []byte("fairwell")
 	// Non-pointer should fail.
 	if err := db.Replace(*i, *i2); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 	// Pointer should succeed.
 	if err := db.Replace(i, i2); err != nil {
@@ -323,7 +323,7 @@ func testDB(db *DB, t *testing.T) {
 
 	// Non-pointer should fail.
 	if _, err := db.Delete(*i); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 	// Pointer should succeed.
 	if n, err := db.Delete(i); err != nil {
@@ -332,7 +332,7 @@ func testDB(db *DB, t *testing.T) {
 		t.Fatalf("Expected 1 delete, but got %d", n)
 	}
 	if err := db.Get(i, "foo", "bar"); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 }
 
@@ -405,7 +405,7 @@ func TestDBAutoIncrement(t *testing.T) {
 	e10 := &User{ID: 10, Name: "seven"}
 	e11 := &User{Name: "eight"}
 	if err := db.Insert(e10, e11); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 }
 
@@ -471,10 +471,10 @@ func TestDBBatch(t *testing.T) {
 		t.Fatalf("Expected count of %d, but got %d", 2, count)
 	}
 	if err := db.Get(i, "foo", "bar"); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 	if err := db.Get(e, e.ID); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 }
 
@@ -644,7 +644,7 @@ func TestDBAllowStringQueries(t *testing.T) {
 
 	// String queries should fail.
 	if err := db.Select(&results, "SELECT * FROM item"); err == nil {
-		t.Fatalf("Expected error, but found success")
+		t.Fatal("Expected error, but found success")
 	}
 }
 
@@ -656,7 +656,7 @@ func TestBindModel_FailUnknownColumns(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Fatalf("Expected to recover an error")
+			t.Fatal("Expected to recover an error")
 		}
 		str := "field 'unmapped' has no mapping"
 		if !strings.Contains(r.(error).Error(), str) {
@@ -676,7 +676,7 @@ func TestBindModel_FailMissingColumn(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Fatalf("Expected to recover an error")
+			t.Fatal("Expected to recover an error")
 		}
 		str := "model fields 'value' have no corresponding db field"
 		if !strings.Contains(r.(error).Error(), str) {
@@ -703,7 +703,7 @@ func TestBindModel_FailNoPrimaryKey(t *testing.T) {
 	_, err := db.BindModel("objects", Object{})
 	str := "objects: table has no primary key"
 	if err == nil {
-		t.Fatalf("Expected missing primary key error, but got nil")
+		t.Fatal("Expected missing primary key error, but got nil")
 	} else if err.Error() != str {
 		t.Fatalf("Unexpected error `%s`, expected `%s`", err, str)
 	}
@@ -758,7 +758,7 @@ func TestStructScan_FailOnUnknownColumns(t *testing.T) {
 	q := items.Select("*").Where(items.C("user_id").Eq(1))
 	err = db.QueryRow(q).StructScan(j)
 	if err == nil {
-		t.Fatal("Expected error, but got %+v", j)
+		t.Fatalf("Expected error, but got %+v", j)
 	}
 	str := "unable to find mapping for column 'unmapped'"
 	if !strings.Contains(err.Error(), str) {
@@ -809,7 +809,7 @@ func TestCommitHooks_PreFails(t *testing.T) {
 	// Commit
 	err = tx.Commit()
 	if err == nil {
-		t.Fatalf("expected Commit to fail, instead it succeeded")
+		t.Fatal("expected Commit to fail, instead it succeeded")
 	}
 	if err.Error() != "oh no!" {
 		t.Fatalf("expected err to be 'oh no!', was: %s", err)
@@ -872,15 +872,15 @@ func TestWithContextDoesNotMutate(t *testing.T) {
 	defer db.Close()
 
 	if db.GetContext() == nil {
-		t.Fatalf("Expected default non-nil Context on DB")
+		t.Fatal("Expected default non-nil Context on DB")
 	}
 
 	dbWithContext := db.WithContext(ctx)
 	if db.GetContext().Value("user_id") != nil {
-		t.Fatalf("Do not expect .WithContext() to mutate the DB instance")
+		t.Fatal("Do not expect .WithContext() to mutate the DB instance")
 	}
 	if dbWithContext.GetContext().Value("user_id") != "123" {
-		t.Fatalf("Expect .WithContext() to return a new DB instance with the context")
+		t.Fatal("Expect .WithContext() to return a new DB instance with the context")
 	}
 
 	tx, err := db.Begin()
@@ -888,15 +888,15 @@ func TestWithContextDoesNotMutate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if tx.GetContext() == nil {
-		t.Fatalf("Expected default non-nil Context on TX")
+		t.Fatal("Expected default non-nil Context on TX")
 	}
 
 	txWithContext := tx.WithContext(ctx)
 	if tx.GetContext().Value("user_id") != nil {
-		t.Fatalf("Do not expect .WithContext() to mutate the TX instance")
+		t.Fatal("Do not expect .WithContext() to mutate the TX instance")
 	}
 	if txWithContext.GetContext().Value("user_id") != "123" {
-		t.Fatalf("Expect .WithContext() to return a new TX instance with the context")
+		t.Fatal("Expect .WithContext() to return a new TX instance with the context")
 	}
 }
 
@@ -965,7 +965,7 @@ func TestTypeAlias_inArgs(t *testing.T) {
 	count := countUsersByName(t, db)
 
 	if count("foo") != 1 {
-		t.Fatalf("should start with one user, named 'foo'")
+		t.Fatal("should start with one user, named 'foo'")
 	}
 
 	// Exec
@@ -974,7 +974,7 @@ func TestTypeAlias_inArgs(t *testing.T) {
 	}
 
 	if count("bar") != 1 {
-		t.Fatalf("we should have renamed the user to 'bar'")
+		t.Fatal("we should have renamed the user to 'bar'")
 	}
 
 	if _, err := db.Exec("UPDATE users SET name = ?", someDoublyTypedAlias("baz")); err != nil {
@@ -982,7 +982,7 @@ func TestTypeAlias_inArgs(t *testing.T) {
 	}
 
 	if count("baz") != 1 {
-		t.Fatalf("we should have renamed the user to 'baz'")
+		t.Fatal("we should have renamed the user to 'baz'")
 	}
 
 	// Select
@@ -991,7 +991,7 @@ func TestTypeAlias_inArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c[0] != 1 {
-		t.Fatalf("we should have renamed the user to 'baz', and still find it")
+		t.Fatal("we should have renamed the user to 'baz', and still find it")
 	}
 
 	// Query
@@ -1007,7 +1007,7 @@ func TestTypeAlias_inArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if name != "baz" {
-		t.Fatalf("we should have renamed the user to 'baz', and still be able to query it")
+		t.Fatal("we should have renamed the user to 'baz', and still be able to query it")
 	}
 	if err := row.Close(); err != nil {
 		t.Fatal(err)
@@ -1022,7 +1022,7 @@ func TestTypeAlias_inArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if name != "baz" {
-		t.Fatalf("we should have renamed the user to 'baz', and still be able to query it")
+		t.Fatal("we should have renamed the user to 'baz', and still be able to query it")
 	}
 }
 
@@ -1053,7 +1053,7 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 	count := countUsersByName(t, db)
 
 	if count("foo") != 1 {
-		t.Fatalf("should start with one user, named 'foo'")
+		t.Fatal("should start with one user, named 'foo'")
 	}
 
 	// Select
@@ -1061,7 +1061,7 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 	if err := db.Select(&users, "SELECT * FROM users"); err != nil {
 		t.Fatal(err)
 	} else if len(users) != 1 {
-		t.Fatalf("should have one user, named 'foo'")
+		t.Fatal("should have one user, named 'foo'")
 	}
 	if string(users[0].Name) != "foo" {
 		t.Fatalf("our user should be named 'foo', was '%s'", users[0].Name)
@@ -1076,7 +1076,7 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !rows.Next() {
-		t.Fatalf("should have one user, named 'foo'")
+		t.Fatal("should have one user, named 'foo'")
 	}
 	var queriedUser TypedUser
 	if err := rows.StructScan(&queriedUser); err != nil {
@@ -1342,11 +1342,11 @@ func (tx *gorpBenchTx) Get(obj interface{}, keys ...interface{}) error {
 }
 
 func (tx *gorpBenchTx) Replace(list ...interface{}) error {
-	return fmt.Errorf("unimplemented")
+	return errors.New("unimplemented")
 }
 
 func (tx *gorpBenchTx) Upsert(list ...interface{}) error {
-	return fmt.Errorf("unimplemented")
+	return errors.New("unimplemented")
 }
 
 func makeGorpBenchDB(b *testing.B) benchDB {
