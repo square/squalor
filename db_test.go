@@ -1117,6 +1117,26 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 	}
 }
 
+func TestSelectOne(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+
+	if _, err := db.BindModel("users", User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Insert(&User{Name: "one"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var user User
+	if err := db.SelectOne(&user, "SELECT * FROM users WHERE name = ?", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if user.Name != "one" {
+		t.Errorf("expected name 'one', was '%s'", user.Name)
+	}
+}
+
 type Object struct {
 	UserID    int64  `db:"user_id"`
 	ID        string `db:"object_id"`

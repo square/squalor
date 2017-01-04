@@ -228,7 +228,7 @@ func TestDBGetStatements(t *testing.T) {
 
 	for _, c := range testCases {
 		recorder := &recordingExecutor{DB: db}
-		if err := getObject(db, recorder, c.obj, c.keys); err == nil {
+		if err := getObjectByKeys(db, recorder, c.obj, c.keys); err == nil {
 			t.Fatalf("Expected ignored error, but found success")
 		}
 		if !reflect.DeepEqual([]string{c.expected}, recorder.query) {
