@@ -39,33 +39,52 @@ type multiCol struct {
 
 type singleColWithUnmapped singleCol
 
+// singleColOptlock has a primary key composed of a single column. See
+// newTestStatementsDB. Additionally, the V column is used for optimistic
+// locking.
+type singleColOptlock struct {
+	A int `db:"a"`
+	B int `db:"b"`
+	V int `db:"v,optlock"`
+}
+
 func newTestStatementsDB(t *testing.T) *DB {
 	db := NewDB(nil)
 
 	data := []struct {
 		name         string
 		model        interface{}
+		keys         int
 		unmappedCols []*Column
 	}{
 		{
 			"single",
 			singleCol{},
+			1,
 			nil,
 		},
 		{
 			"multi",
 			multiCol{},
+			3,
 			nil,
 		},
 		{
 			"single_with_unmapped",
 			singleColWithUnmapped{},
+			1,
 			[]*Column{
 				&Column{
 					Name:     "unmapped",
 					Nullable: true,
 				},
 			},
+		},
+		{
+			"single_ol",
+			singleColOptlock{},
+			1,
+			nil,
 		},
 	}
 	for _, d := range data {
@@ -74,7 +93,7 @@ func newTestStatementsDB(t *testing.T) *DB {
 			Name:    "PRIMARY",
 			Primary: true,
 			Unique:  true,
-			Columns: table.Columns[:len(table.Columns)-1],
+			Columns: table.Columns[:d.keys],
 		}
 		table.Columns = append(table.Columns, d.unmappedCols...)
 		for _, col := range d.unmappedCols {
@@ -99,7 +118,7 @@ func (r dummyResult) LastInsertId() (int64, error) {
 }
 
 func (r dummyResult) RowsAffected() (int64, error) {
-	return 0, nil
+	return 1, nil
 }
 
 type recordingExecutor struct {
@@ -418,6 +437,12 @@ func TestDBUpdateStatements(t *testing.T) {
 					"WHERE (`multi`.`a` = 1 AND `multi`.`b` = 2 AND `multi`.`c` = 3)",
 				"UPDATE `multi` SET `multi`.`d` = 8 " +
 					"WHERE (`multi`.`a` = 5 AND `multi`.`b` = 6 AND `multi`.`c` = 7)",
+			},
+		},
+		{[]interface{}{&singleColOptlock{1, 2, 3}},
+			[]string{
+				"UPDATE `single_ol` SET `single_ol`.`b` = 2, `single_ol`.`v` = `single_ol`.`v`+1 " +
+					"WHERE (`single_ol`.`a` = 1 AND `single_ol`.`v` = 3)",
 			},
 		},
 	}

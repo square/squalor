@@ -34,6 +34,11 @@ import (
 // all the ids, or none at all.
 var ErrMixedAutoIncrIDs = errors.New("sql: auto increment column must be all set or unset")
 
+// ErrConcurrentModificationDetected is returned when attempting to update
+// versioned records, and concurrent modifications by another transaction
+// are detected.
+var ErrConcurrentModificationDetected = errors.New("sql: concurrent modification detected")
+
 // Executor defines the common interface for executing operations on a
 // DB or on a Tx.
 type Executor interface {
@@ -177,12 +182,13 @@ func makeUpsertPlan(m *Model) insertPlan {
 }
 
 type updatePlan struct {
-	updateBuilder   *UpdateBuilder
-	setColumns      []ValExprBuilder
-	setTraversals   [][]int
-	whereColumns    []ValExprBuilder
-	whereTraversals [][]int
-	hooks           updateHooks
+	updateBuilder    *UpdateBuilder
+	setColumns       []ValExprBuilder
+	setColumnsSetter []func(reflect.Value, int) interface{}
+	setTraversals    [][]int
+	whereColumns     []ValExprBuilder
+	whereTraversals  [][]int
+	hooks            updateHooks
 }
 
 func makeUpdatePlan(m *Model) updatePlan {
@@ -197,6 +203,11 @@ func makeUpdatePlan(m *Model) updatePlan {
 		p.whereColumns[i] = m.Table.C(col.Name)
 		whereColNames[i] = col.Name
 	}
+	if m.optlockColumnName != nil {
+		name := *m.optlockColumnName
+		p.whereColumns = append(p.whereColumns, m.Table.C(name))
+		whereColNames = append(whereColNames, name)
+	}
 	p.whereTraversals = m.fields.getTraversals(whereColNames)
 
 	var setColumns []string
@@ -206,6 +217,17 @@ func makeUpdatePlan(m *Model) updatePlan {
 		}
 		setColumns = append(setColumns, col.Name)
 		p.setColumns = append(p.setColumns, m.Table.C(col.Name))
+		var setter func(reflect.Value, int) interface{}
+		if name := col.Name; m.optlockColumnName != nil && *m.optlockColumnName == name {
+			setter = func(reflect.Value, int) interface{} {
+				return m.C(name).Plus(NumVal("1"))
+			}
+		} else {
+			setter = func(v reflect.Value, i int) interface{} {
+				return v.FieldByIndex(m.update.setTraversals[i]).Interface()
+			}
+		}
+		p.setColumnsSetter = append(p.setColumnsSetter, setter)
 	}
 	p.setTraversals = m.fields.getTraversals(setColumns)
 	return p
@@ -223,6 +245,10 @@ type Model struct {
 	// All DB columns that are mapped in the model.
 	mappedColumns  []*Column
 	mappedColNames []string
+	// The name of the column used for optimistic locking, if any.
+	optlockColumnName *string
+	// The incrementor for the version field, if any.
+	optlockInc func(reflect.Value)
 	// The precomputed query plans.
 	delete  deletePlan
 	get     getPlan
@@ -244,6 +270,12 @@ func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
 	}
 	m.mappedColumns = mappedColumns
 	m.mappedColNames = getColumnNames(m.mappedColumns)
+	if n, f, err := m.fields.getOptlockColumnNameAndInc(); err != nil {
+		panic(fmt.Errorf("%s: %s", table.Name, err))
+	} else {
+		m.optlockColumnName = n
+		m.optlockInc = f
+	}
 	m.delete = makeDeletePlan(m)
 	m.get = makeGetPlan(m)
 	m.insert = makeInsertPlan(m, false)
@@ -1485,7 +1517,7 @@ func updateModel(model *Model, exec Executor, list []interface{}) (int64, error)
 
 		*b = *model.update.updateBuilder
 		for i, col := range model.update.setColumns {
-			b.Set(col, v.FieldByIndex(model.update.setTraversals[i]).Interface())
+			b.Set(col, model.update.setColumnsSetter[i](v, i))
 		}
 		var where BoolExprBuilder
 		for i, traversal := range model.update.whereTraversals {
@@ -1506,6 +1538,12 @@ func updateModel(model *Model, exec Executor, list []interface{}) (int64, error)
 		rows, err := res.RowsAffected()
 		if err != nil {
 			return -1, err
+		}
+		if model.optlockColumnName != nil {
+			if rows != 1 {
+				return -1, ErrConcurrentModicationDetected
+			}
+			model.optlockInc(v)
 		}
 		count += rows
 

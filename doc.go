@@ -178,6 +178,23 @@ See the documentation for DB.Delete for performance limitations when
 batch deleting multiple rows from a table with a primary key composed
 of multiple columns.
 
+Optimistic Locking
+
+To support optimistic locking with a column storing the version number,
+one field in a model object can be marked to serve as the lock. Modifying
+the example above:
+
+    type User struct {
+      ID   int64  `db:"id"`
+      Name string `db:"name"`
+      Ver  int    `db:"version,optlock"`
+    }
+
+Now, the Update method will ensure that the object has not been concurrently
+modified when writing, by constraining the update by the version number.
+If the update is successful, the version number will be both incremented
+on the model (in-memory), as well as in the database.
+
 Programmatic SQL Construction
 
 Programmatic construction of SQL queries prohibits SQL injection

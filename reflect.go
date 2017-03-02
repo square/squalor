@@ -20,13 +20,23 @@ import (
 	"strings"
 )
 
-type fieldMap map[string]reflect.StructField
+type fieldDesc struct {
+	reflect.StructField
+	optlock bool
+}
+
+type fieldMap map[string]fieldDesc
+
+const (
+	tagName    = "db"
+	tagOptlock = "optlock"
+)
 
 // getMapping returns a mapping for the type t, using the tagName and
 // the mapFunc to determine the canonical names of fields. Based on
 // reflectx.getMapping, but the returned map is from string to
 // reflect.StructField instead of string to index slice.
-func getMapping(t reflect.Type, tagName string, mapFunc func(string) string) fieldMap {
+func getMapping(t reflect.Type, mapFunc func(string) string) fieldMap {
 	type typeQueue struct {
 		t reflect.Type
 		p []int
@@ -42,7 +52,7 @@ func getMapping(t reflect.Type, tagName string, mapFunc func(string) string) fie
 		for fieldPos := 0; fieldPos < tq.t.NumField(); fieldPos++ {
 			f := tq.t.Field(fieldPos)
 
-			name := f.Tag.Get(tagName)
+			name, optlock := readTag(f.Tag.Get(tagName))
 
 			// Breadth first search of untagged anonymous embedded structs.
 			if f.Anonymous && f.Type.Kind() == reflect.Struct && name == "" {
@@ -76,14 +86,22 @@ func getMapping(t reflect.Type, tagName string, mapFunc func(string) string) fie
 			// Add it to the map at the current position.
 			sf := f
 			sf.Index = appendIndex(tq.p, fieldPos)
-			m[name] = sf
+			m[name] = fieldDesc{sf, optlock}
 		}
 	}
 	return m
 }
 
+func readTag(tag string) (string, bool) {
+	if comma := strings.Index(tag, ","); comma != -1 {
+		return tag[0:comma], tag[comma+1:len(tag)] == tagOptlock
+	} else {
+		return tag, false
+	}
+}
+
 func getDBFields(t reflect.Type) fieldMap {
-	return getMapping(t, "db", strings.ToLower)
+	return getMapping(t, strings.ToLower)
 }
 
 // getTraversals returns the field traversals (for use by
@@ -124,6 +142,46 @@ func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols, ignore
 		return nil, fmt.Errorf("model fields '%s' have no corresponding db field", strings.Join(notMapped, ", "))
 	}
 	return mappedColumns, nil
+}
+
+func (m fieldMap) getOptlockColumnNameAndInc() (*string, func(reflect.Value), error) {
+	var (
+		optlockColumnName string
+		optlockInc        func(reflect.Value)
+		found             bool
+	)
+	for name, f := range m {
+		if f.optlock {
+			if found {
+				return nil, nil, fmt.Errorf("model has two columns marked for optimistic locking")
+			}
+			var (
+				k     = f.Type.Kind()
+				index = f.Index
+			)
+			if k == reflect.Int || k == reflect.Int8 ||
+				k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64 {
+				optlockInc = func(v reflect.Value) {
+					ver := v.FieldByIndex(index)
+					ver.SetInt(ver.Int() + 1)
+				}
+			} else if k == reflect.Uint || k == reflect.Uint8 || k == reflect.Uint16 ||
+				k == reflect.Uint32 || k == reflect.Uint64 {
+				optlockInc = func(v reflect.Value) {
+					ver := v.FieldByIndex(index)
+					ver.SetUint(ver.Uint() + 1)
+				}
+			} else {
+				return nil, nil, fmt.Errorf("model field '%s' must be of int or uint kind to be marked for optimistic locking", f.Name)
+			}
+			optlockColumnName = name
+			found = true
+		}
+	}
+	if found {
+		return &optlockColumnName, optlockInc, nil
+	}
+	return nil, nil, nil
 }
 
 // deref is Indirect for reflect.Type

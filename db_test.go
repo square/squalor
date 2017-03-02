@@ -1117,6 +1117,90 @@ func TestTypeAlias_inMappedStruct(t *testing.T) {
 	}
 }
 
+const versionedUsersDDL = `
+CREATE TABLE users (
+  id   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  ver  INT NOT NULL
+)`
+
+type VersionedUser struct {
+	ID      uint64 `db:"id"`
+	Name    string `db:"name"`
+	Version int    `db:"ver,optlock"`
+}
+
+func TestVersionedUser_base(t *testing.T) {
+	db := makeTestDB(t, versionedUsersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", VersionedUser{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert
+	u := &VersionedUser{
+		Name:    "foo",
+		Version: 1,
+	}
+	if err := db.Insert(u); err != nil {
+		t.Fatal(err)
+	}
+
+	// Update
+	u.Name = "bar"
+	if count, err := db.Update(u); err != nil {
+		t.Fatal(err)
+	} else if count != 1 {
+		t.Fatalf("expected one modified row, got %d", count)
+	}
+
+	// On update, we expect the in-memory representation of the version
+	// to be incremented.
+	if u.Version != 2 {
+		t.Fatalf("expected in-memory version %d, was at version %d", 2, u.Version)
+	}
+
+	// And similarly, we expect the stored representation to be incremented.
+	stored := &VersionedUser{}
+	if err := db.Get(stored, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Version != 2 {
+		t.Fatalf("expected stored version %d, was at version %d", 2, stored.Version)
+	}
+}
+
+func TestVersionedUser_concurrentModification(t *testing.T) {
+	db := makeTestDB(t, versionedUsersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", VersionedUser{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Insert
+	u := &VersionedUser{
+		Name:    "foo",
+		Version: 1,
+	}
+	if err := db.Insert(u); err != nil {
+		t.Fatal(err)
+	}
+
+	// Concurrent modification
+	if _, err := db.Exec("update users set ver = 456 where id = ?", u.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Meanwhile, we try to udate, and expect a failure
+	u.Name = "bar"
+	_, err := db.Update(u)
+	if err == nil {
+		t.Fatalf("expected a concurrent modification error, but no error occured")
+	} else if err != ErrConcurrentModicationDetected {
+		t.Fatalf("expected a concurrent modification error, but was '%s'", err)
+	}
+}
+
 type Object struct {
 	UserID    int64  `db:"user_id"`
 	ID        string `db:"object_id"`
