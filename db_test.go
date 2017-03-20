@@ -1196,7 +1196,7 @@ func TestVersionedUser_concurrentModification(t *testing.T) {
 	_, err := db.Update(u)
 	if err == nil {
 		t.Fatalf("expected a concurrent modification error, but no error occured")
-	} else if err != ErrConcurrentModicationDetected {
+	} else if err != ErrConcurrentModificationDetected {
 		t.Fatalf("expected a concurrent modification error, but was '%s'", err)
 	}
 }

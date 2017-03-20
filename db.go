@@ -1541,7 +1541,7 @@ func updateModel(model *Model, exec Executor, list []interface{}) (int64, error)
 		}
 		if model.optlockColumnName != nil {
 			if rows != 1 {
-				return -1, ErrConcurrentModicationDetected
+				return -1, ErrConcurrentModificationDetected
 			}
 			model.optlockInc(v)
 		}
