@@ -35,7 +35,7 @@ func TestBasic(t *testing.T) {
 
 	f := Foo{1, 2, 3}
 	fv := reflect.ValueOf(f)
-	m := getMapping(reflect.TypeOf(f), "", nil)
+	m := getMapping(reflect.TypeOf(f), nil)
 
 	v := fieldByName(m, fv, "A")
 	if v.Int() != f.A {
@@ -71,7 +71,7 @@ func TestEmbedded(t *testing.T) {
 	z.B = 2
 	z.Bar.Foo.A = 3
 	zv := reflect.ValueOf(z)
-	m := getMapping(reflect.TypeOf(z), "", nil)
+	m := getMapping(reflect.TypeOf(z), nil)
 
 	v := fieldByName(m, zv, "A")
 	if v.Int() != z.A {
@@ -98,7 +98,7 @@ func TestPrivate(t *testing.T) {
 	z.B = 2
 	zv := reflect.ValueOf(z)
 
-	m := getMapping(reflect.TypeOf(z), "", nil)
+	m := getMapping(reflect.TypeOf(z), nil)
 
 	v := fieldByName(m, zv, "A")
 	if v.Int() != z.A {
@@ -153,6 +153,31 @@ func TestMapping(t *testing.T) {
 
 	if _, ok := m["ignored"]; ok {
 		t.Errorf("Expected to ignore `Ignored` field")
+	}
+}
+
+func TestReadTag(t *testing.T) {
+	testCases := []struct {
+		tag     string
+		name    string
+		optlock bool
+	}{
+		{"-", "-", false},
+		{"foo", "foo", false},
+		{"foo,", "foo", false},
+		{"foo,optlock", "foo", true},
+		{",optlock", "", true},
+		{",wrong", "", false},
+		{",", "", false},
+	}
+	for _, c := range testCases {
+		name, optlock := readTag(c.tag)
+		if name != c.name {
+			t.Errorf("%s: expected name '%s', actual '%s'", c.tag, c.name, name)
+		}
+		if optlock != c.optlock {
+			t.Errorf("%s: expected optlock '%t', actual '%t'", c.tag, c.optlock, optlock)
+		}
 	}
 }
 
