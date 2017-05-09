@@ -46,6 +46,10 @@ func makeTestDSN(dbName string) string {
 }
 
 func makeTestDB(t testing.TB, ddls ...string) *DB {
+	return makeTestDBWithOptions(t, []DBOption{}, ddls...)
+}
+
+func makeTestDBWithOptions(t testing.TB, options []DBOption, ddls ...string) *DB {
 	const dbName = "squalor_test"
 
 	// We need to create an initial database connection for the purpose
@@ -77,5 +81,6 @@ func makeTestDB(t testing.TB, ddls ...string) *DB {
 			t.Fatal(err)
 		}
 	}
-	return NewDB(db)
+	newDB, _ := NewDB(db, options...)
+	return newDB
 }

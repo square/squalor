@@ -22,6 +22,7 @@ import (
 	"io"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,10 +60,14 @@ type Executor interface {
 type ExecutorContext interface {
 	Executor
 
-	// Returns an Executor that is equivalent to this Executor, expect that the
+	// Returns an Executor that is equivalent to this Executor, except that the
 	// returned Executor's GetContext() function will return the supplied Context.
 	// This Executor is unchanged. The supplied Context must not be nil.
+	//
+	// If the Context has a deadline set, the query may be set to time out after the
+	// given deadline (for read-only queries when run on a suitable database engine).
 	WithContext(ctx context.Context) ExecutorContext
+
 	// Returns the Context supplied when this Executor was created by WithContext,
 	// or Context.Background() if WithContext was never called.
 	GetContext() context.Context
@@ -352,19 +357,118 @@ type DB struct {
 	mu                 sync.RWMutex
 	models             map[reflect.Type]*Model
 	mappings           map[reflect.Type]fieldMap
+
+	// Function to add a deadline to a query.
+	deadlineQueryRewriter func(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error)
 }
 
-// NewDB creates a new DB from an sql.DB.
-func NewDB(db *sql.DB) *DB {
-	return &DB{
-		DB:                 db,
-		AllowStringQueries: true,
-		IgnoreUnmappedCols: true,
-		IgnoreMissingCols:  false,
-		Context:            context.Background(),
-		Logger:             nil,
-		models:             map[reflect.Type]*Model{},
-		mappings:           map[reflect.Type]fieldMap{},
+type DBOption func(*DB) error
+
+// When passed as an option to NewDB(), disables query deadlines.
+func QueryDeadlineNone(db *DB) error {
+	db.deadlineQueryRewriter = noopDeadlineQueryRewriter
+	return nil
+}
+
+// When passed as an option to NewDB(), enables query deadlines on Percona Server 5.6 or later.
+// Query deadlines only affect SELECT queries run via the Executor.Query function.
+// It us up to the underlying database engine to enforce the deadline.
+func QueryDeadlinePercona56(db *DB) error {
+	db.deadlineQueryRewriter = perconaDeadlineQueryRewriter
+	return nil
+}
+
+// When passed as an option to NewDB(), enables query deadlines on MySql 5.7.4 or later.
+// Query deadlines only affect SELECT queries run via the Executor.Query function.
+// It us up to the underlying database engine to enforce the deadline.
+func QueryDeadlineMySQL57(db *DB) error {
+	db.deadlineQueryRewriter = mySql57DeadlineQueryRewriter
+	return nil
+}
+
+// When passed as an option to NewDB(), determines whether to allow string queries.
+func AllowStringQueries(allow bool) DBOption {
+	return func(db *DB) error {
+		db.AllowStringQueries = allow
+		return nil
+	}
+}
+
+// When passed as an option to NewDB(), determines whether to ignore unmapped database columns.
+func IgnoreUnmappedCols(ignore bool) DBOption {
+	return func(db *DB) error {
+		db.IgnoreUnmappedCols = ignore
+		return nil
+	}
+}
+
+// When passed as an option to NewDB(), determines whether to ignore missing database columns.
+func IgnoreMissingCols(ignore bool) DBOption {
+	return func(db *DB) error {
+		db.IgnoreMissingCols = ignore
+		return nil
+	}
+}
+
+// When passed as an option to NewDB(), SetQueryLogger sets database logger to the given QueryLogger.
+func SetQueryLogger(logger QueryLogger) DBOption {
+	return func(db *DB) error {
+		db.Logger = logger
+		return nil
+	}
+}
+
+// NewDB creates a new DB from an sql.DB. Zero or more DBOptions may be passed in and will
+// be processed in order.
+func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
+	newDB := &DB{
+		DB:                    db,
+		AllowStringQueries:    true,
+		IgnoreUnmappedCols:    true,
+		IgnoreMissingCols:     false,
+		Context:               context.Background(),
+		Logger:                nil,
+		deadlineQueryRewriter: noopDeadlineQueryRewriter,
+		models:                map[reflect.Type]*Model{},
+		mappings:              map[reflect.Type]fieldMap{},
+	}
+	for i, option := range options {
+		if err := option(newDB); err != nil {
+			return nil, fmt.Errorf("Error procesing DBOption with index %d: %v", i, err)
+		}
+	}
+	return newDB, nil
+}
+
+func noopDeadlineQueryRewriter(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error) {
+	return query, nil
+}
+
+func perconaDeadlineQueryRewriter(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error) {
+	serializer, err := db.getSerializer(query)
+	if err != nil {
+		return nil, err
+	}
+	querystr, err := Serialize(serializer)
+	if err != nil {
+		return nil, err
+	}
+	return fmt.Sprintf("SET STATEMENT max_statement_time=%d FOR %s", millis, querystr), nil
+}
+
+func mySql57DeadlineQueryRewriter(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error) {
+	serializer, err := db.getSerializer(query)
+	if err != nil {
+		return nil, err
+	}
+	querystr, err := Serialize(serializer)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(querystr, "SELECT ") {
+		return fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ %s", millis, querystr[7:]), nil
+	} else {
+		return querystr, nil
 	}
 }
 
@@ -572,6 +676,23 @@ func (db *DB) Insert(list ...interface{}) error {
 // small wrapper around sql.DB.Query that returns a *squalor.Rows
 // instead.
 func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
+	start := time.Now()
+	if db.Context != nil {
+		if deadline, ok := db.Context.Deadline(); ok && !deadline.IsZero() {
+			// Set an execution deadline for the query.
+			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
+			if remainingMillis > 0 {
+				var err error
+				query, err = db.deadlineQueryRewriter(db, query, remainingMillis)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, context.DeadlineExceeded
+			}
+		}
+	}
+
 	serializer, err := db.getSerializer(query)
 	if err != nil {
 		return nil, err
@@ -581,7 +702,6 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 		return nil, err
 	}
 
-	start := time.Now()
 	argsConverted := argsConvert(args)
 	rows, err := db.DB.Query(querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
@@ -788,6 +908,23 @@ func (tx *Tx) Insert(list ...interface{}) error {
 // small wrapper around sql.Tx.Query that returns a *squalor.Rows
 // instead.
 func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
+	start := time.Now()
+	if tx.DB.Context != nil {
+		if deadline, ok := tx.DB.Context.Deadline(); ok && !deadline.IsZero() {
+			// Set an execution deadline for the query.
+			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
+			if remainingMillis > 0 {
+				var err error
+				query, err = tx.DB.deadlineQueryRewriter(tx.DB, query, remainingMillis)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, context.DeadlineExceeded
+			}
+		}
+	}
+
 	serializer, err := tx.DB.getSerializer(query)
 	if err != nil {
 		return nil, err
@@ -797,7 +934,6 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 		return nil, err
 	}
 
-	start := time.Now()
 	argsConverted := argsConvert(args)
 	rows, err := tx.Tx.Query(querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)

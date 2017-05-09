@@ -817,8 +817,9 @@ func TestCommitHooks_PreFails(t *testing.T) {
 }
 
 type TestLogger struct {
-	t     *testing.T
-	count int
+	t         *testing.T
+	count     int
+	lastQuery string
 }
 
 func (l *TestLogger) Log(query Serializer, exec Executor, executionTime time.Duration, err error) {
@@ -830,18 +831,18 @@ func (l *TestLogger) Log(query Serializer, exec Executor, executionTime time.Dur
 		l.t.Fatalf("Expected to receive an ExecutorContext instance")
 	}
 	l.count++
-
+	queryStr, _ := Serialize(query)
+	l.lastQuery = queryStr
 }
 
 func TestWithContext(t *testing.T) {
-	db := makeTestDB(t, usersDDL)
-	defer db.Close()
-
 	logger := &TestLogger{
 		t:     t,
 		count: 0,
 	}
-	db.Logger = logger
+
+	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
 
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, "user_id", "123")
@@ -897,6 +898,125 @@ func TestWithContextDoesNotMutate(t *testing.T) {
 	}
 	if txWithContext.GetContext().Value("user_id") != "123" {
 		t.Fatalf("Expect .WithContext() to return a new TX instance with the context")
+	}
+}
+
+func TestWithPerconaDeadline(t *testing.T) {
+	logger := &TestLogger{}
+	db := makeTestDBWithOptions(t, []DBOption{QueryDeadlinePercona56, SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	now := time.Now()
+	later := now.Add(time.Duration(10 * time.Second))
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "user_id", "123")
+
+	var cancel func()
+	ctx, cancel = context.WithDeadline(ctx, later)
+	defer cancel()
+
+	db = db.WithContext(ctx).(*DB)
+	if dbDeadline, _ := db.GetContext().Deadline(); dbDeadline != later {
+		t.Fatalf("Expected db.GetContext.Deadline() to return %v, got %v", later, dbDeadline)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txDeadline, _ := tx.GetContext().Deadline(); txDeadline != later {
+		t.Fatalf("Expected tx.GetContext.Deadline() to return %v, got %v", later, txDeadline)
+	}
+
+	tx.Query("SELECT * from objects")
+
+	if !strings.HasPrefix(logger.lastQuery, "SET STATEMENT max_statement_time=") ||
+		!strings.HasSuffix(logger.lastQuery, " FOR SELECT * from objects") {
+		t.Fatalf("Expected %q, got %q", "SET STATEMENT max_statement_time=? FOR SELECT * from objects", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWithMySql57Deadline(t *testing.T) {
+	logger := &TestLogger{}
+	db := makeTestDBWithOptions(t, []DBOption{QueryDeadlineMySQL57, SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	now := time.Now()
+	later := now.Add(time.Duration(10 * time.Second))
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "user_id", "123")
+
+	var cancel func()
+	ctx, cancel = context.WithDeadline(ctx, later)
+	defer cancel()
+
+	db = db.WithContext(ctx).(*DB)
+	if dbDeadline, _ := db.GetContext().Deadline(); dbDeadline != later {
+		t.Fatalf("Expected db.GetContext.Deadline() to return %v, got %v", later, dbDeadline)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txDeadline, _ := tx.GetContext().Deadline(); txDeadline != later {
+		t.Fatalf("Expected tx.GetContext.Deadline() to return %v, got %v", later, txDeadline)
+	}
+
+	tx.Query("SELECT * from objects")
+
+	if !strings.HasPrefix(logger.lastQuery, "SELECT /*+ MAX_EXECUTION_TIME(") ||
+		!strings.HasSuffix(logger.lastQuery, ") */ * from objects") {
+		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) */ * from objects", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWithoutDeadline(t *testing.T) {
+	logger := &TestLogger{}
+	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
+	db.deadlineQueryRewriter = func(db *DB, query interface{}, millis int64) (interface{}, error) {
+		t.Fatal("DeadlineQueryRewriter should not be called")
+		return nil, nil
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "user_id", "123")
+
+	db = db.WithContext(ctx).(*DB)
+	if dbDeadline, ok := db.GetContext().Deadline(); ok {
+		t.Fatalf("Unexpected db.GetContext.Deadline(): %v", dbDeadline)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txDeadline, ok := tx.GetContext().Deadline(); ok {
+		t.Fatalf("Unexpected tx.GetContext.Deadline(): %v", txDeadline)
+	}
+
+	tx.Query("SELECT * from objects")
+
+	if logger.lastQuery != "SELECT * from objects" {
+		t.Fatalf("Expected %q, got %q", "SELECT * from objects", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
