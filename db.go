@@ -63,9 +63,25 @@ type ExecutorContext interface {
 	// returned Executor's GetContext() function will return the supplied Context.
 	// This Executor is unchanged. The supplied Context must not be nil.
 	WithContext(ctx context.Context) ExecutorContext
+
 	// Returns the Context supplied when this Executor was created by WithContext,
 	// or Context.Background() if WithContext was never called.
 	GetContext() context.Context
+
+	// Returns an Executor that is equivalent to this Executor, expect that the
+	// returned Executor's GetDeadline() function will return the supplied time.Time.
+	// Read-only queries issued by this Executor are allowed to time out after the
+	// specified deadline time has passed.
+	//
+	// The implementation of this feature requires Percona Server 5.6,
+	// or MySql 5.7 or later.
+	//
+	// This Executor is unchanged. The supplied time.Time must not be nil.
+	WithDeadline(time.Time) ExecutorContext
+
+	// Returns the deadline set by WithDeadline, or time.Time{} if WithDeadline was
+	// never called.
+	GetDeadline() time.Time
 }
 
 var _ ExecutorContext = &DB{}
@@ -349,9 +365,11 @@ type DB struct {
 	IgnoreUnmappedCols bool
 	Context            context.Context
 	Logger             QueryLogger
-	mu                 sync.RWMutex
-	models             map[reflect.Type]*Model
-	mappings           map[reflect.Type]fieldMap
+	// Query deadline, ignored if Deadline.IsZero().
+	Deadline time.Time
+	mu       sync.RWMutex
+	models   map[reflect.Type]*Model
+	mappings map[reflect.Type]fieldMap
 }
 
 // NewDB creates a new DB from an sql.DB.
@@ -486,8 +504,18 @@ func (db *DB) WithContext(ctx context.Context) ExecutorContext {
 	return &newDB
 }
 
+func (db *DB) WithDeadline(deadline time.Time) ExecutorContext {
+	newDB := *db
+	newDB.Deadline = deadline
+	return &newDB
+}
+
 func (db *DB) GetContext() context.Context {
 	return db.Context
+}
+
+func (db *DB) GetDeadline() time.Time {
+	return db.Deadline
 }
 
 // Delete runs a batched SQL DELETE statement, grouping the objects by
@@ -579,6 +607,16 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	querystr, err := Serialize(serializer)
 	if err != nil {
 		return nil, err
+	}
+
+	if !db.Deadline.IsZero() {
+		// Set an execution deadline for the query.
+		remainingMillis := int64(db.Deadline.Sub(time.Now()) / time.Millisecond)
+		if remainingMillis > 0 {
+			querystr = fmt.Sprintf("SET STATEMENT max_statement_time=%d FOR %s", remainingMillis, querystr)
+		} else {
+			return nil, fmt.Errorf("Query deadline exceeded by %d ms", -remainingMillis)
+		}
 	}
 
 	start := time.Now()
@@ -723,8 +761,20 @@ func (tx *Tx) WithContext(ctx context.Context) ExecutorContext {
 	return &newTx
 }
 
+func (tx *Tx) WithDeadline(deadline time.Time) ExecutorContext {
+	newTx := *tx
+	newDB := *newTx.DB
+	newDB.Deadline = deadline
+	newTx.DB = &newDB
+	return &newTx
+}
+
 func (tx *Tx) GetContext() context.Context {
 	return tx.DB.GetContext()
+}
+
+func (tx *Tx) GetDeadline() time.Time {
+	return tx.DB.GetDeadline()
 }
 
 // Exec executes a query that doesn't return rows. For example: an
@@ -795,6 +845,16 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	querystr, err := Serialize(serializer)
 	if err != nil {
 		return nil, err
+	}
+
+	if !tx.DB.Deadline.IsZero() {
+		// Set an execution deadline for the query.
+		remainingMillis := int64(tx.DB.Deadline.Sub(time.Now()) / time.Millisecond)
+		if remainingMillis > 0 {
+			querystr = fmt.Sprintf("SET STATEMENT max_statement_time=%d FOR %s", remainingMillis, querystr)
+		} else {
+			return nil, fmt.Errorf("Query deadline exceeded by %v", -remainingMillis)
+		}
 	}
 
 	start := time.Now()
