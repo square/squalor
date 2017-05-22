@@ -49,7 +49,7 @@ type singleColOptlock struct {
 }
 
 func newTestStatementsDB(t *testing.T) *DB {
-	db := NewDB(nil)
+	db, _ := NewDB(nil)
 
 	data := []struct {
 		name         string
