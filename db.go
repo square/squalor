@@ -46,6 +46,7 @@ type Executor interface {
 	Delete(list ...interface{}) (int64, error)
 	Exec(query interface{}, args ...interface{}) (sql.Result, error)
 	Get(dest interface{}, keys ...interface{}) error
+	GetModel(obj interface{}) (*Model, error)
 	Insert(list ...interface{}) error
 	Query(query interface{}, args ...interface{}) (*Rows, error)
 	QueryRow(query interface{}, args ...interface{}) *Row
@@ -887,6 +888,13 @@ func (tx *Tx) Delete(list ...interface{}) (int64, error) {
 // BindModel.
 func (tx *Tx) Get(dest interface{}, keys ...interface{}) error {
 	return getObject(tx.DB, tx, dest, keys)
+}
+
+// GetModel retrieves the model for the specified object. Obj must be
+// a struct. An error is returned if obj has not been bound to a table
+// via a call to BindModel.
+func (tx *Tx) GetModel(obj interface{}) (*Model, error) {
+	return tx.DB.GetModel(obj)
 }
 
 // Insert runs a batched SQL INSERT statement, grouping the objects by
