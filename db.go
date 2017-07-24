@@ -352,8 +352,8 @@ type DB struct {
 	// The default is true that ignores the unmapped columns.
 	// NOTE: Unmapped columns in primary keys are still not allowed.
 	IgnoreUnmappedCols bool
-	Context            context.Context
 	Logger             QueryLogger
+	context            context.Context
 	mu                 sync.RWMutex
 	models             map[reflect.Type]*Model
 	mappings           map[reflect.Type]fieldMap
@@ -426,8 +426,8 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 		AllowStringQueries:    true,
 		IgnoreUnmappedCols:    true,
 		IgnoreMissingCols:     false,
-		Context:               context.Background(),
 		Logger:                nil,
+		context:               context.Background(),
 		deadlineQueryRewriter: noopDeadlineQueryRewriter,
 		models:                map[reflect.Type]*Model{},
 		mappings:              map[reflect.Type]fieldMap{},
@@ -586,12 +586,12 @@ func (db *DB) WithContext(ctx context.Context) ExecutorContext {
 		panic(fmt.Errorf("Nil Context passed to Executor.WithContext"))
 	}
 	newDB := *db
-	newDB.Context = ctx
+	newDB.context = ctx
 	return &newDB
 }
 
 func (db *DB) GetContext() context.Context {
-	return db.Context
+	return db.context
 }
 
 // Delete runs a batched SQL DELETE statement, grouping the objects by
@@ -677,8 +677,8 @@ func (db *DB) Insert(list ...interface{}) error {
 // instead.
 func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	start := time.Now()
-	if db.Context != nil {
-		if deadline, ok := db.Context.Deadline(); ok && !deadline.IsZero() {
+	if db.context != nil {
+		if deadline, ok := db.context.Deadline(); ok && !deadline.IsZero() {
 			// Set an execution deadline for the query.
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
@@ -838,7 +838,7 @@ func (tx *Tx) WithContext(ctx context.Context) ExecutorContext {
 	}
 	newTx := *tx
 	newDB := *newTx.DB
-	newDB.Context = ctx
+	newDB.context = ctx
 	newTx.DB = &newDB
 	return &newTx
 }
@@ -909,8 +909,8 @@ func (tx *Tx) Insert(list ...interface{}) error {
 // instead.
 func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	start := time.Now()
-	if tx.DB.Context != nil {
-		if deadline, ok := tx.DB.Context.Deadline(); ok && !deadline.IsZero() {
+	if tx.DB.context != nil {
+		if deadline, ok := tx.DB.context.Deadline(); ok && !deadline.IsZero() {
 			// Set an execution deadline for the query.
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
