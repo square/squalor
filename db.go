@@ -76,14 +76,6 @@ type ExecutorContext interface {
 var _ ExecutorContext = &DB{}
 var _ ExecutorContext = &Tx{}
 
-func writeStrings(buf *bytes.Buffer, strs ...string) {
-	for _, s := range strs {
-		if _, err := buf.WriteString(s); err != nil {
-			panic(err)
-		}
-	}
-}
-
 type deletePlan struct {
 	deleteBuilder *DeleteBuilder
 	keyColumns    []ValExprBuilder
@@ -641,7 +633,7 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	result, err := db.DB.Exec(querystr, argsConverted...)
+	result, err := exec(db.GetContext(), db.DB, querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	return result, err
@@ -675,7 +667,7 @@ func (db *DB) Insert(list ...interface{}) error {
 // args are for any placeholder parameters in the query. This is a
 // small wrapper around sql.DB.Query that returns a *squalor.Rows
 // instead.
-func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
+func (db *DB) Query(q interface{}, args ...interface{}) (*Rows, error) {
 	start := time.Now()
 	if db.context != nil {
 		if deadline, ok := db.context.Deadline(); ok && !deadline.IsZero() {
@@ -683,7 +675,7 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
 				var err error
-				query, err = db.deadlineQueryRewriter(db, query, remainingMillis)
+				q, err = db.deadlineQueryRewriter(db, q, remainingMillis)
 				if err != nil {
 					return nil, err
 				}
@@ -693,7 +685,7 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 		}
 	}
 
-	serializer, err := db.getSerializer(query)
+	serializer, err := db.getSerializer(q)
 	if err != nil {
 		return nil, err
 	}
@@ -703,7 +695,7 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	}
 
 	argsConverted := argsConvert(args)
-	rows, err := db.DB.Query(querystr, argsConverted...)
+	rows, err := query(db.GetContext(), db.DB, querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	if err != nil {
@@ -716,8 +708,8 @@ func (db *DB) Query(query interface{}, args ...interface{}) (*Rows, error) {
 // row. QueryRow always return a non-nil value. Errors are deferred
 // until Row's Scan method is called. This is a small wrapper around
 // sql.DB.QueryRow that returns a *squalor.Row instead.
-func (db *DB) QueryRow(query interface{}, args ...interface{}) *Row {
-	serializer, err := db.getSerializer(query)
+func (db *DB) QueryRow(q interface{}, args ...interface{}) *Row {
+	serializer, err := db.getSerializer(q)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
@@ -728,7 +720,7 @@ func (db *DB) QueryRow(query interface{}, args ...interface{}) *Row {
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	rows, err := db.DB.Query(querystr, argsConverted...)
+	rows, err := query(db.GetContext(), db.DB, querystr, argsConverted...)
 	db.logQuery(serializer, db, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: db}, err: err}
@@ -791,7 +783,7 @@ func (db *DB) Upsert(list ...interface{}) error {
 // Begin begins a transaction and returns a *squalor.Tx instead of a
 // *sql.Tx.
 func (db *DB) Begin() (*Tx, error) {
-	tx, err := db.DB.Begin()
+	tx, err := begin(db)
 	if err != nil {
 		return nil, err
 	}
@@ -861,7 +853,7 @@ func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	result, err := tx.Tx.Exec(querystr, argsConverted...)
+	result, err := exec(tx.GetContext(), tx.Tx, querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	return result, err
@@ -907,7 +899,7 @@ func (tx *Tx) Insert(list ...interface{}) error {
 // args are for any placeholder parameters in the query. This is a
 // small wrapper around sql.Tx.Query that returns a *squalor.Rows
 // instead.
-func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
+func (tx *Tx) Query(q interface{}, args ...interface{}) (*Rows, error) {
 	start := time.Now()
 	if tx.DB.context != nil {
 		if deadline, ok := tx.DB.context.Deadline(); ok && !deadline.IsZero() {
@@ -915,7 +907,7 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
 				var err error
-				query, err = tx.DB.deadlineQueryRewriter(tx.DB, query, remainingMillis)
+				q, err = tx.DB.deadlineQueryRewriter(tx.DB, q, remainingMillis)
 				if err != nil {
 					return nil, err
 				}
@@ -925,7 +917,7 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 		}
 	}
 
-	serializer, err := tx.DB.getSerializer(query)
+	serializer, err := tx.DB.getSerializer(q)
 	if err != nil {
 		return nil, err
 	}
@@ -935,7 +927,7 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 	}
 
 	argsConverted := argsConvert(args)
-	rows, err := tx.Tx.Query(querystr, argsConverted...)
+	rows, err := query(tx.GetContext(), tx.Tx, querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	if err != nil {
@@ -948,8 +940,8 @@ func (tx *Tx) Query(query interface{}, args ...interface{}) (*Rows, error) {
 // row. QueryRow always return a non-nil value. Errors are deferred
 // until Row's Scan method is called. This is a small wrapper around
 // sql.Tx.QueryRow that returns a *squalor.Row instead.
-func (tx *Tx) QueryRow(query interface{}, args ...interface{}) *Row {
-	serializer, err := tx.DB.getSerializer(query)
+func (tx *Tx) QueryRow(q interface{}, args ...interface{}) *Row {
+	serializer, err := tx.DB.getSerializer(q)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
@@ -960,7 +952,7 @@ func (tx *Tx) QueryRow(query interface{}, args ...interface{}) *Row {
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	rows, err := tx.Tx.Query(querystr, argsConverted...)
+	rows, err := query(tx.GetContext(), tx.Tx, querystr, argsConverted...)
 	tx.DB.logQuery(serializer, tx, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: tx.DB}, err: err}
