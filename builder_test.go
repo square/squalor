@@ -430,6 +430,8 @@ func TestSelectBuilder(t *testing.T) {
 			"SELECT * FROM `users` LEFT JOIN `objects`"},
 		{users.RightJoin(objects).Select("*"),
 			"SELECT * FROM `users` RIGHT JOIN `objects`"},
+		{users.Select("*").Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
+			"SELECT * FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
 	}
 
 	for _, c := range testCases {

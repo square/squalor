@@ -588,9 +588,11 @@ func (b ValExprBuilder) In(list ...interface{}) BoolExprBuilder {
 }
 
 // InTuple creates an IN expression from a tuple.
-func (b ValExprBuilder) InTuple(tuple ValTuple) BoolExprBuilder {
-	if len(tuple.Exprs) == 0 {
-		return b.makeComparisonExpr(astIn, makeErrVal("empty list"))
+func (b ValExprBuilder) InTuple(tuple Tuple) BoolExprBuilder {
+	if valTuple, ok := tuple.(ValTuple); ok {
+		if len(valTuple.Exprs) == 0 {
+			return b.makeComparisonExpr(astIn, makeErrVal("empty list"))
+		}
 	}
 	return b.makeComparisonExpr(astIn, tuple)
 }
@@ -601,9 +603,11 @@ func (b ValExprBuilder) NotIn(list ...interface{}) BoolExprBuilder {
 }
 
 // NotInTuple creates a NOT IN expression from a tuple.
-func (b ValExprBuilder) NotInTuple(tuple ValTuple) BoolExprBuilder {
-	if len(tuple.Exprs) == 0 {
-		return b.makeComparisonExpr(astNotIn, makeErrVal("empty list"))
+func (b ValExprBuilder) NotInTuple(tuple Tuple) BoolExprBuilder {
+	if valTuple, ok := tuple.(ValTuple); ok {
+		if len(valTuple.Exprs) == 0 {
+			return b.makeComparisonExpr(astNotIn, makeErrVal("empty list"))
+		}
 	}
 	return b.makeComparisonExpr(astNotIn, tuple)
 }
