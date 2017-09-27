@@ -1157,6 +1157,22 @@ type Subquery struct {
 	Select SelectStatement
 }
 
+func (s *Subquery) Serialize(w Writer) error {
+	_, err := w.Write([]byte{'('})
+	if err != nil {
+		return err
+	}
+	err = s.Select.Serialize(w)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write([]byte{')'})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // BinaryExpr represents a binary value expression.
 type BinaryExpr struct {
 	Operator    byte
