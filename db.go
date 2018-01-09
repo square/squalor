@@ -346,7 +346,7 @@ type DB struct {
 	IgnoreUnmappedCols bool
 	Logger             QueryLogger
 	context            context.Context
-	mu                 sync.RWMutex
+	mu                 *sync.RWMutex // pointer, so copies in WithContext() behave properly.
 	models             map[reflect.Type]*Model
 	mappings           map[reflect.Type]fieldMap
 
@@ -423,6 +423,7 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 		deadlineQueryRewriter: noopDeadlineQueryRewriter,
 		models:                map[reflect.Type]*Model{},
 		mappings:              map[reflect.Type]fieldMap{},
+		mu:                    &sync.RWMutex{},
 	}
 	for i, option := range options {
 		if err := option(newDB); err != nil {
