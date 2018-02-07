@@ -578,3 +578,54 @@ func ExampleTable_Join() {
 	}
 	// Output: SELECT * FROM `users` INNER JOIN `objects` USING (`id`)
 }
+
+func TestExampleTable_Join(t *testing.T) {
+	type Word struct {
+		ID              int    `db:"id"`
+		Version         int    `db:"version"`
+		Word            string `db:"word"`
+		ObjectID        int    `db:"object_id"`
+		MasterCatalogID int    `db:"master_catalog_id"`
+	}
+	words := NewTable("word", Word{})
+	type Object struct {
+		ID              int    `db:"id"`
+		Token           string `db:"token"`
+		MasterCatalogID int    `db:"master_catalog_id"`
+	}
+	objects := NewTable("object", Object{})
+	type Attribute struct {
+		ID              int    `db:"id"`
+		DefinitionID    int    `db:"attribute_definition_id"`
+		StringValue     string `db:"string_value"`
+		IntValue        int    `db:"int_value"`
+		ObjectID        int    `db:"object_id"`
+		MasterCatalogID int    `db:"master_catalog_id"`
+		ObjectType      int    `db:"object_type"`
+		DeletedBy       *int   `db:"deleted_by"`
+	}
+	attr_variation := NewAliasedTable("attribute", "attr_variation", Attribute{})
+	attr_item := NewAliasedTable("attribute", "attr_items", Attribute{})
+	q := attr_variation.InnerJoin(words).On(words.C("object_id").Eq(attr_variation.C("object_id"))).
+		InnerJoin(objects).On(objects.C("token").Eq(attr_variation.C("string_value"))).
+		InnerJoin(attr_item).On(objects.C("id").Eq(attr_item.C("object_id"))).
+		Select(
+			objects.C("id").As("item_object_id"),
+			words.C("object_id").As("word_object_id"),
+			attr_item.C("string_value").As("item_name")).
+		Where(words.C("master_catalog_id").Eq(1403016).
+			And(words.C("version").Eq(1)).
+			And(attr_variation.C("object_type").Eq(5)).
+			And(attr_variation.C("attribute_definition_id").Eq(4285)).
+			And(attr_variation.C("deleted_by").IsNull()).
+			And(attr_item.C("attribute_definition_id").Eq(3)).
+			And(words.C("word").Like("Apple")).
+			And(attr_item.C("deleted_by").IsNull())).
+		OrderBy(attr_item.C("string_value").Ascending())
+	if sql, err := Serialize(q); err != nil {
+		t.Fatal(err)
+	} else {
+		t.Log(sql)
+	}
+	// Output: SELECT *
+}
