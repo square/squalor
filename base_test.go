@@ -41,7 +41,7 @@ func makeTestDSN(dbName string) string {
 	if !strings.Contains(host, ":") {
 		host += ":3306"
 	}
-	fmt.Fprintf(&buf, "tcp(%s)/%s?strict=true", host, dbName)
+	fmt.Fprintf(&buf, "tcp(%s)/%s", host, dbName)
 	return buf.String()
 }
 
