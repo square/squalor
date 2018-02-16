@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"golang.org/x/net/context"
 )
 
 // singleCol has a primary key composed of a single column. See
@@ -128,6 +130,10 @@ type recordingExecutor struct {
 }
 
 func (r *recordingExecutor) Exec(stmt interface{}, args ...interface{}) (sql.Result, error) {
+	return r.ExecContext(context.Background(), stmt, args...)
+}
+
+func (r *recordingExecutor) ExecContext(_ context.Context, stmt interface{}, args ...interface{}) (sql.Result, error) {
 	var querystr string
 	var err error
 
@@ -153,6 +159,10 @@ func (r *recordingExecutor) Exec(stmt interface{}, args ...interface{}) (sql.Res
 }
 
 func (r *recordingExecutor) QueryRow(query interface{}, args ...interface{}) *Row {
+	return r.QueryRowContext(context.Background(), query, args...)
+}
+
+func (r *recordingExecutor) QueryRowContext(_ context.Context, query interface{}, args ...interface{}) *Row {
 	if len(args) != 0 {
 		panic(fmt.Errorf("expected 0 args: %+v", args))
 	}
@@ -213,7 +223,7 @@ func TestDBDeleteStatements(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := deleteModel(model, recorder, c.list); err != nil {
+		if _, err := deleteModel(context.Background(), model, recorder, c.list); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(c.expected, recorder.exec) {
@@ -247,7 +257,7 @@ func TestDBGetStatements(t *testing.T) {
 
 	for _, c := range testCases {
 		recorder := &recordingExecutor{DB: db}
-		if err := getObject(db, recorder, c.obj, c.keys); err == nil {
+		if err := getObject(context.Background(), db, recorder, c.obj, c.keys); err == nil {
 			t.Fatalf("Expected ignored error, but found success")
 		}
 		if !reflect.DeepEqual([]string{c.expected}, recorder.query) {
@@ -396,7 +406,7 @@ func TestDBInsertStatements(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := insertModel(model, recorder, c.plan, c.list); err != nil {
+		if err := insertModel(context.Background(), model, recorder, c.plan, c.list); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual([]string{c.expected}, recorder.exec) {
@@ -453,7 +463,7 @@ func TestDBUpdateStatements(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := updateModel(model, recorder, c.list); err != nil {
+		if _, err := updateModel(context.Background(), model, recorder, c.list); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(c.expected, recorder.exec) {

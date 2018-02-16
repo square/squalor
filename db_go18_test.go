@@ -20,48 +20,94 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
-func TestWithContextTimeout(t *testing.T) {
+func TestExecutorContextTimeout(t *testing.T) {
 	db := makeTestDB(t, usersDDL)
 	defer db.Close()
 
-	if db.GetContext() == nil {
-		t.Fatal("Expected default non-nil Context on DB")
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx.Context() == nil {
+		t.Fatal("Expected default non-nil Context on Tx")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	db = db.WithContext(ctx).(*DB)
+	tx = tx.WithContext(ctx).(*Tx)
 
 	// This query should be canceled.
-	if _, err := db.Query("SELECT SLEEP(1)"); err != context.DeadlineExceeded {
+	if _, err = tx.Query("SELECT SLEEP(1)"); err != context.DeadlineExceeded {
 		t.Fatalf("expected context.DeadlineExceeded, got %v", err)
 	}
 
 	// This query should immediately err because the context has already exceeded
 	// the timeout.
-	if _, err := db.Query("SELECT 1"); err != context.DeadlineExceeded {
+	if _, err = tx.Query("SELECT 1"); err != context.DeadlineExceeded {
+		t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+	}
+
+	if err = tx.Commit(); err != mysql.ErrInvalidConn {
 		t.Fatalf("expected context.DeadlineExceeded, got %v", err)
 	}
 }
 
-func TestWithContextNoTimeout(t *testing.T) {
+func TestExecutorContextNoTimeout(t *testing.T) {
 	db := makeTestDB(t, usersDDL)
 	defer db.Close()
 
-	if db.GetContext() == nil {
-		t.Fatal("Expected default non-nil Context on DB")
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tx.Context() == nil {
+		t.Fatal("Expected default non-nil Context on TX")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	db = db.WithContext(ctx).(*DB)
+	tx = tx.WithContext(ctx).(*Tx)
 
 	// This query should not err.
-	if _, err := db.Query("SELECT 1"); err != nil {
+	if _, err := tx.Query("SELECT 1"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQueryContextTimeout(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// This query should be canceled.
+	if _, err := db.QueryContext(ctx, "SELECT SLEEP(1)"); err != context.DeadlineExceeded {
+		t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+	}
+
+	// This query should immediately err because the context has already exceeded
+	// the timeout.
+	if _, err := db.QueryContext(ctx, "SELECT 1"); err != context.DeadlineExceeded {
+		t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+	}
+}
+
+func TestQueryContextNoTimeout(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	// This query should not err.
+	if _, err := db.QueryContext(ctx, "SELECT 1"); err != nil {
 		t.Fatal(err)
 	}
 }
