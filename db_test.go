@@ -822,13 +822,9 @@ type TestLogger struct {
 	lastQuery string
 }
 
-func (l *TestLogger) Log(query Serializer, exec Executor, executionTime time.Duration, err error) {
-	if execContext, ok := exec.(ExecutorContext); ok {
-		if execContext.Context().Value("user_id") != "123" {
-			l.t.Fatalf("Expected context with user_id 123")
-		}
-	} else {
-		l.t.Fatalf("Expected to receive an ExecutorContext instance")
+func (l *TestLogger) Log(ctx context.Context, query Serializer, exec Executor, executionTime time.Duration, err error) {
+	if ctx.Value("user_id") != "123" {
+		l.t.Fatalf("Expected context with user_id 123")
 	}
 	l.count++
 	queryStr, _ := Serialize(query)

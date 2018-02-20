@@ -477,13 +477,13 @@ func mySql57DeadlineQueryRewriter(db *DB, query interface{}, millis int64) (quer
 	}
 }
 
-func (db *DB) logQuery(query Serializer, exec Executor, start time.Time, err error) {
+func (db *DB) logQuery(ctx context.Context, query Serializer, exec Executor, start time.Time, err error) {
 	if db.Logger == nil {
 		return
 	}
 
 	executionTime := time.Now().Sub(start)
-	db.Logger.Log(query, exec, executionTime, err)
+	db.Logger.Log(ctx, query, exec, executionTime, err)
 }
 
 // GetModel retrieves the model for the specified object. Obj must be
@@ -657,7 +657,7 @@ func (db *DB) ExecContext(ctx context.Context, query interface{}, args ...interf
 	start := time.Now()
 	argsConverted := argsConvert(args)
 	result, err := exec(ctx, db.DB, querystr, argsConverted...)
-	db.logQuery(serializer, db, start, err)
+	db.logQuery(ctx, serializer, db, start, err)
 
 	return result, err
 }
@@ -734,7 +734,7 @@ func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface
 
 	argsConverted := argsConvert(args)
 	rows, err := query(ctx, db.DB, querystr, argsConverted...)
-	db.logQuery(serializer, db, start, err)
+	db.logQuery(ctx, serializer, db, start, err)
 
 	if err != nil {
 		return nil, err
@@ -764,7 +764,7 @@ func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 	start := time.Now()
 	argsConverted := argsConvert(args)
 	rows, err := query(ctx, db.DB, querystr, argsConverted...)
-	db.logQuery(serializer, db, start, err)
+	db.logQuery(ctx, serializer, db, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: db}, err: err}
 }
@@ -922,7 +922,7 @@ func (tx *Tx) ExecContext(ctx context.Context, query interface{}, args ...interf
 	start := time.Now()
 	argsConverted := argsConvert(args)
 	result, err := exec(ctx, tx.Tx, querystr, argsConverted...)
-	tx.DB.logQuery(serializer, tx, start, err)
+	tx.DB.logQuery(ctx, serializer, tx, start, err)
 
 	return result, err
 }
@@ -1016,7 +1016,7 @@ func (tx *Tx) QueryContext(ctx context.Context, q interface{}, args ...interface
 
 	argsConverted := argsConvert(args)
 	rows, err := query(ctx, tx.Tx, querystr, argsConverted...)
-	tx.DB.logQuery(serializer, tx, start, err)
+	tx.DB.logQuery(ctx, serializer, tx, start, err)
 
 	if err != nil {
 		return nil, err
@@ -1046,7 +1046,7 @@ func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 	start := time.Now()
 	argsConverted := argsConvert(args)
 	rows, err := query(ctx, tx.Tx, querystr, argsConverted...)
-	tx.DB.logQuery(serializer, tx, start, err)
+	tx.DB.logQuery(ctx, serializer, tx, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: tx.DB}, err: err}
 }
