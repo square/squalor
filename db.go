@@ -53,6 +53,18 @@ type Executor interface {
 	Select(dest interface{}, query interface{}, args ...interface{}) error
 	Update(list ...interface{}) (int64, error)
 	Upsert(list ...interface{}) error
+
+	// Context versions of the general functions.
+	DeleteContext(ctx context.Context, list ...interface{}) (int64, error)
+	ExecContext(ctx context.Context, query interface{}, args ...interface{}) (sql.Result, error)
+	GetContext(ctx context.Context, dest interface{}, keys ...interface{}) error
+	InsertContext(ctx context.Context, list ...interface{}) error
+	QueryContext(ctx context.Context, query interface{}, args ...interface{}) (*Rows, error)
+	QueryRowContext(ctx context.Context, query interface{}, args ...interface{}) *Row
+	ReplaceContext(ctx context.Context, list ...interface{}) error
+	SelectContext(ctx context.Context, dest interface{}, query interface{}, args ...interface{}) error
+	UpdateContext(ctx context.Context, list ...interface{}) (int64, error)
+	UpsertContext(ctx context.Context, list ...interface{}) error
 }
 
 // ExecutorContext extends the Executor interface by allowing a Context object to be supplied by
@@ -61,7 +73,7 @@ type ExecutorContext interface {
 	Executor
 
 	// Returns an Executor that is equivalent to this Executor, except that the
-	// returned Executor's GetContext() function will return the supplied Context.
+	// returned Executor's Context() function will return the supplied Context.
 	// This Executor is unchanged. The supplied Context must not be nil.
 	//
 	// If the Context has a deadline set, the query may be set to time out after the
@@ -70,7 +82,7 @@ type ExecutorContext interface {
 
 	// Returns the Context supplied when this Executor was created by WithContext,
 	// or Context.Background() if WithContext was never called.
-	GetContext() context.Context
+	Context() context.Context
 }
 
 var _ ExecutorContext = &DB{}
@@ -465,13 +477,13 @@ func mySql57DeadlineQueryRewriter(db *DB, query interface{}, millis int64) (quer
 	}
 }
 
-func (db *DB) logQuery(query Serializer, exec Executor, start time.Time, err error) {
+func (db *DB) logQuery(ctx context.Context, query Serializer, exec Executor, start time.Time, err error) {
 	if db.Logger == nil {
 		return
 	}
 
 	executionTime := time.Now().Sub(start)
-	db.Logger.Log(query, exec, executionTime, err)
+	db.Logger.Log(ctx, query, exec, executionTime, err)
 }
 
 // GetModel retrieves the model for the specified object. Obj must be
@@ -583,7 +595,7 @@ func (db *DB) WithContext(ctx context.Context) ExecutorContext {
 	return &newDB
 }
 
-func (db *DB) GetContext() context.Context {
+func (db *DB) Context() context.Context {
 	return db.context
 }
 
@@ -617,12 +629,22 @@ func (db *DB) GetContext() context.Context {
 // deletion. But if your first primary key column is identical then
 // batching can work perfectly.
 func (db *DB) Delete(list ...interface{}) (int64, error) {
-	return deleteObjects(db, db, list)
+	return deleteObjects(db.Context(), db, db, list)
+}
+
+// DeleteContext is the context version of Delete.
+func (db *DB) DeleteContext(ctx context.Context, list ...interface{}) (int64, error) {
+	return deleteObjects(ctx, db, db, list)
 }
 
 // Exec executes a query without returning any rows. The args are for any
 // placeholder parameters in the query.
 func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
+	return db.ExecContext(db.Context(), query, args...)
+}
+
+// ExecContext is the context version of Exec.
+func (db *DB) ExecContext(ctx context.Context, query interface{}, args ...interface{}) (sql.Result, error) {
 	serializer, err := db.getSerializer(query)
 	if err != nil {
 		return nil, err
@@ -634,8 +656,8 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	result, err := exec(db.GetContext(), db.DB, querystr, argsConverted...)
-	db.logQuery(serializer, db, start, err)
+	result, err := exec(ctx, db.DB, querystr, argsConverted...)
+	db.logQuery(ctx, serializer, db, start, err)
 
 	return result, err
 }
@@ -647,7 +669,12 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 // Returns an error if the object type has not been registered with
 // BindModel.
 func (db *DB) Get(dest interface{}, keys ...interface{}) error {
-	return getObject(db, db, dest, keys)
+	return getObject(db.Context(), db, db, dest, keys)
+}
+
+// GetContext is the context version of Get.
+func (db *DB) GetContext(ctx context.Context, dest interface{}, keys ...interface{}) error {
+	return getObject(ctx, db, db, dest, keys)
 }
 
 // Insert runs a batched SQL INSERT statement, grouping the objects by
@@ -661,7 +688,12 @@ func (db *DB) Get(dest interface{}, keys ...interface{}) error {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (db *DB) Insert(list ...interface{}) error {
-	return insertObjects(db, db, getInsert, list)
+	return insertObjects(db.Context(), db, db, getInsert, list)
+}
+
+// InsertContext is the context version of Insert.
+func (db *DB) InsertContext(ctx context.Context, list ...interface{}) error {
+	return insertObjects(ctx, db, db, getInsert, list)
 }
 
 // Query executes a query that returns rows, typically a SELECT. The
@@ -669,9 +701,14 @@ func (db *DB) Insert(list ...interface{}) error {
 // small wrapper around sql.DB.Query that returns a *squalor.Rows
 // instead.
 func (db *DB) Query(q interface{}, args ...interface{}) (*Rows, error) {
+	return db.QueryContext(db.Context(), q, args...)
+}
+
+// QueryContext is the context version of Query.
+func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
 	start := time.Now()
-	if db.context != nil {
-		if deadline, ok := db.context.Deadline(); ok && !deadline.IsZero() {
+	if ctx != nil {
+		if deadline, ok := ctx.Deadline(); ok && !deadline.IsZero() {
 			// Set an execution deadline for the query.
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
@@ -696,8 +733,8 @@ func (db *DB) Query(q interface{}, args ...interface{}) (*Rows, error) {
 	}
 
 	argsConverted := argsConvert(args)
-	rows, err := query(db.GetContext(), db.DB, querystr, argsConverted...)
-	db.logQuery(serializer, db, start, err)
+	rows, err := query(ctx, db.DB, querystr, argsConverted...)
+	db.logQuery(ctx, serializer, db, start, err)
 
 	if err != nil {
 		return nil, err
@@ -710,6 +747,11 @@ func (db *DB) Query(q interface{}, args ...interface{}) (*Rows, error) {
 // until Row's Scan method is called. This is a small wrapper around
 // sql.DB.QueryRow that returns a *squalor.Row instead.
 func (db *DB) QueryRow(q interface{}, args ...interface{}) *Row {
+	return db.QueryRowContext(db.Context(), q, args...)
+}
+
+// QueryRowContext is the context version of QueryRow.
+func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) *Row {
 	serializer, err := db.getSerializer(q)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
@@ -721,8 +763,8 @@ func (db *DB) QueryRow(q interface{}, args ...interface{}) *Row {
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	rows, err := query(db.GetContext(), db.DB, querystr, argsConverted...)
-	db.logQuery(serializer, db, start, err)
+	rows, err := query(ctx, db.DB, querystr, argsConverted...)
+	db.logQuery(ctx, serializer, db, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: db}, err: err}
 }
@@ -742,7 +784,12 @@ func (db *DB) QueryRow(q interface{}, args ...interface{}) *Row {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (db *DB) Replace(list ...interface{}) error {
-	return insertObjects(db, db, getReplace, list)
+	return insertObjects(db.Context(), db, db, getReplace, list)
+}
+
+// ReplaceContext is the context version of Replace.
+func (db *DB) ReplaceContext(ctx context.Context, list ...interface{}) error {
+	return insertObjects(ctx, db, db, getReplace, list)
 }
 
 // Select runs an arbitrary SQL query, unmarshalling the matching rows
@@ -758,7 +805,12 @@ func (db *DB) Replace(list ...interface{}) error {
 // *[]*struct{} is allowed.  It is mildly more efficient to use
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (db *DB) Select(dest interface{}, q interface{}, args ...interface{}) error {
-	return selectObjects(db, dest, q, args)
+	return selectObjects(db.Context(), db, dest, q, args)
+}
+
+// SelectContext is the context version of Select.
+func (db *DB) SelectContext(ctx context.Context, dest interface{}, q interface{}, args ...interface{}) error {
+	return selectObjects(ctx, db, dest, q, args)
 }
 
 // Update runs a SQL UPDATE statement for each element in list. List
@@ -769,7 +821,12 @@ func (db *DB) Select(dest interface{}, q interface{}, args ...interface{}) error
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (db *DB) Update(list ...interface{}) (int64, error) {
-	return updateObjects(db, db, list)
+	return updateObjects(db.Context(), db, db, list)
+}
+
+// UpdateContext is the context version of Update.
+func (db *DB) UpdateContext(ctx context.Context, list ...interface{}) (int64, error) {
+	return updateObjects(ctx, db, db, list)
 }
 
 // Upsert runs a SQL INSERT ON DUPLICATE KEY UPDATE statement for each
@@ -778,7 +835,12 @@ func (db *DB) Update(list ...interface{}) (int64, error) {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (db *DB) Upsert(list ...interface{}) error {
-	return insertObjects(db, db, getUpsert, list)
+	return insertObjects(db.Context(), db, db, getUpsert, list)
+}
+
+// UpsertContext is the context version of Upsert.
+func (db *DB) UpsertContext(ctx context.Context, list ...interface{}) error {
+	return insertObjects(ctx, db, db, getUpsert, list)
 }
 
 // Begin begins a transaction and returns a *squalor.Tx instead of a
@@ -836,13 +898,18 @@ func (tx *Tx) WithContext(ctx context.Context) ExecutorContext {
 	return &newTx
 }
 
-func (tx *Tx) GetContext() context.Context {
-	return tx.DB.GetContext()
+func (tx *Tx) Context() context.Context {
+	return tx.DB.Context()
 }
 
 // Exec executes a query that doesn't return rows. For example: an
 // INSERT and UPDATE.
 func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
+	return tx.ExecContext(tx.Context(), query, args...)
+}
+
+// ExecContext executes a query using the provided context.
+func (tx *Tx) ExecContext(ctx context.Context, query interface{}, args ...interface{}) (sql.Result, error) {
 	serializer, err := tx.DB.getSerializer(query)
 	if err != nil {
 		return nil, err
@@ -854,8 +921,8 @@ func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	result, err := exec(tx.GetContext(), tx.Tx, querystr, argsConverted...)
-	tx.DB.logQuery(serializer, tx, start, err)
+	result, err := exec(ctx, tx.Tx, querystr, argsConverted...)
+	tx.DB.logQuery(ctx, serializer, tx, start, err)
 
 	return result, err
 }
@@ -869,7 +936,12 @@ func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) Delete(list ...interface{}) (int64, error) {
-	return deleteObjects(tx.DB, tx, list)
+	return deleteObjects(tx.Context(), tx.DB, tx, list)
+}
+
+// DeleteContext is the context version of Delete.
+func (tx *Tx) DeleteContext(ctx context.Context, list ...interface{}) (int64, error) {
+	return deleteObjects(ctx, tx.DB, tx, list)
 }
 
 // Get runs a SQL SELECT to fetch a single row. Keys must be the
@@ -879,7 +951,12 @@ func (tx *Tx) Delete(list ...interface{}) (int64, error) {
 // Returns an error if the object type has not been registered with
 // BindModel.
 func (tx *Tx) Get(dest interface{}, keys ...interface{}) error {
-	return getObject(tx.DB, tx, dest, keys)
+	return getObject(tx.Context(), tx.DB, tx, dest, keys)
+}
+
+// GetContext is the context version of Get.
+func (tx *Tx) GetContext(ctx context.Context, dest interface{}, keys ...interface{}) error {
+	return getObject(ctx, tx.DB, tx, dest, keys)
 }
 
 // Insert runs a batched SQL INSERT statement, grouping the objects by
@@ -893,7 +970,12 @@ func (tx *Tx) Get(dest interface{}, keys ...interface{}) error {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) Insert(list ...interface{}) error {
-	return insertObjects(tx.DB, tx, getInsert, list)
+	return insertObjects(tx.Context(), tx.DB, tx, getInsert, list)
+}
+
+// InsertContext is the context version of Insert.
+func (tx *Tx) InsertContext(ctx context.Context, list ...interface{}) error {
+	return insertObjects(ctx, tx.DB, tx, getInsert, list)
 }
 
 // Query executes a query that returns rows, typically a SELECT. The
@@ -901,9 +983,14 @@ func (tx *Tx) Insert(list ...interface{}) error {
 // small wrapper around sql.Tx.Query that returns a *squalor.Rows
 // instead.
 func (tx *Tx) Query(q interface{}, args ...interface{}) (*Rows, error) {
+	return tx.QueryContext(tx.Context(), q, args...)
+}
+
+// QueryContext is the context version of Query.
+func (tx *Tx) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
 	start := time.Now()
-	if tx.DB.context != nil {
-		if deadline, ok := tx.DB.context.Deadline(); ok && !deadline.IsZero() {
+	if ctx != nil {
+		if deadline, ok := tx.Context().Deadline(); ok && !deadline.IsZero() {
 			// Set an execution deadline for the query.
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
@@ -928,8 +1015,8 @@ func (tx *Tx) Query(q interface{}, args ...interface{}) (*Rows, error) {
 	}
 
 	argsConverted := argsConvert(args)
-	rows, err := query(tx.GetContext(), tx.Tx, querystr, argsConverted...)
-	tx.DB.logQuery(serializer, tx, start, err)
+	rows, err := query(ctx, tx.Tx, querystr, argsConverted...)
+	tx.DB.logQuery(ctx, serializer, tx, start, err)
 
 	if err != nil {
 		return nil, err
@@ -942,6 +1029,11 @@ func (tx *Tx) Query(q interface{}, args ...interface{}) (*Rows, error) {
 // until Row's Scan method is called. This is a small wrapper around
 // sql.Tx.QueryRow that returns a *squalor.Row instead.
 func (tx *Tx) QueryRow(q interface{}, args ...interface{}) *Row {
+	return tx.QueryRowContext(tx.Context(), q, args...)
+}
+
+// QueryRowContext is the context version of QueryRow.
+func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) *Row {
 	serializer, err := tx.DB.getSerializer(q)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
@@ -953,8 +1045,8 @@ func (tx *Tx) QueryRow(q interface{}, args ...interface{}) *Row {
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	rows, err := query(tx.GetContext(), tx.Tx, querystr, argsConverted...)
-	tx.DB.logQuery(serializer, tx, start, err)
+	rows, err := query(ctx, tx.Tx, querystr, argsConverted...)
+	tx.DB.logQuery(ctx, serializer, tx, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: tx.DB}, err: err}
 }
@@ -974,7 +1066,12 @@ func (tx *Tx) QueryRow(q interface{}, args ...interface{}) *Row {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) Replace(list ...interface{}) error {
-	return insertObjects(tx.DB, tx, getReplace, list)
+	return insertObjects(tx.Context(), tx.DB, tx, getReplace, list)
+}
+
+// ReplaceContext is the context version of Replace.
+func (tx *Tx) ReplaceContext(ctx context.Context, list ...interface{}) error {
+	return insertObjects(ctx, tx.DB, tx, getReplace, list)
 }
 
 // Select runs an arbitrary SQL query, unmarshalling the matching rows
@@ -990,7 +1087,12 @@ func (tx *Tx) Replace(list ...interface{}) error {
 // *[]*struct{} is allowed.  It is mildly more efficient to use
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (tx *Tx) Select(dest interface{}, q interface{}, args ...interface{}) error {
-	return selectObjects(tx, dest, q, args)
+	return selectObjects(tx.Context(), tx, dest, q, args)
+}
+
+// SelectContext is the context version of Select.
+func (tx *Tx) SelectContext(ctx context.Context, dest interface{}, q interface{}, args ...interface{}) error {
+	return selectObjects(ctx, tx, dest, q, args)
 }
 
 // Update runs a SQL UPDATE statement for each element in list. List
@@ -1001,7 +1103,12 @@ func (tx *Tx) Select(dest interface{}, q interface{}, args ...interface{}) error
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) Update(list ...interface{}) (int64, error) {
-	return updateObjects(tx.DB, tx, list)
+	return updateObjects(tx.Context(), tx.DB, tx, list)
+}
+
+// UpdateContext is the context version of Update.
+func (tx *Tx) UpdateContext(ctx context.Context, list ...interface{}) (int64, error) {
+	return updateObjects(ctx, tx.DB, tx, list)
 }
 
 // Upsert runs a SQL INSERT ON DUPLICATE KEY UPDATE statement for each
@@ -1010,7 +1117,12 @@ func (tx *Tx) Update(list ...interface{}) (int64, error) {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) Upsert(list ...interface{}) error {
-	return insertObjects(tx.DB, tx, getUpsert, list)
+	return insertObjects(tx.Context(), tx.DB, tx, getUpsert, list)
+}
+
+// UpsertContext is the context version of Upsert.
+func (tx *Tx) UpsertContext(ctx context.Context, list ...interface{}) error {
+	return insertObjects(ctx, tx.DB, tx, getUpsert, list)
 }
 
 // setTyp holds a locus to set a value into, after it has been converted to
@@ -1271,7 +1383,7 @@ func (s *rowGrouper) Swap(i, j int) {
 
 // TODO(pmattis): The various *Model functions could really be methods
 // on either Model or *Plan.
-func deleteModel(model *Model, exec Executor, list []interface{}) (int64, error) {
+func deleteModel(ctx context.Context, model *Model, exec Executor, list []interface{}) (int64, error) {
 	// Note: you might be tempted to think that the DELETE statement
 	// could have the form:
 	//
@@ -1375,7 +1487,7 @@ func deleteModel(model *Model, exec Executor, list []interface{}) (int64, error)
 				b.Where(andExpr.And(inExpr))
 			}
 
-			res, err := exec.Exec(&b)
+			res, err := exec.ExecContext(ctx, &b)
 			if err != nil {
 				return -1, err
 			}
@@ -1403,7 +1515,7 @@ func deleteModel(model *Model, exec Executor, list []interface{}) (int64, error)
 	return count, nil
 }
 
-func deleteObjects(db *DB, exec Executor, list []interface{}) (int64, error) {
+func deleteObjects(ctx context.Context, db *DB, exec Executor, list []interface{}) (int64, error) {
 	objs, err := groupObjects(db, list)
 	if err != nil {
 		return -1, err
@@ -1411,7 +1523,7 @@ func deleteObjects(db *DB, exec Executor, list []interface{}) (int64, error) {
 
 	var count int64
 	for model, list := range objs {
-		nrows, err := deleteModel(model, exec, list)
+		nrows, err := deleteModel(ctx, model, exec, list)
 		if err != nil {
 			return -1, err
 		}
@@ -1421,7 +1533,7 @@ func deleteObjects(db *DB, exec Executor, list []interface{}) (int64, error) {
 	return count, nil
 }
 
-func getObject(db *DB, exec Executor, obj interface{}, keys []interface{}) error {
+func getObject(ctx context.Context, db *DB, exec Executor, obj interface{}, keys []interface{}) error {
 	objT := reflect.TypeOf(obj)
 	if objT.Kind() != reflect.Ptr {
 		return fmt.Errorf("obj must be a pointer: %T", obj)
@@ -1473,7 +1585,7 @@ func getObject(db *DB, exec Executor, obj interface{}, keys []interface{}) error
 		}
 	}
 
-	if err := exec.QueryRow(&q).Scan(dest...); err != nil {
+	if err := exec.QueryRowContext(ctx, &q).Scan(dest...); err != nil {
 		return err
 	}
 
@@ -1484,7 +1596,7 @@ func getObject(db *DB, exec Executor, obj interface{}, keys []interface{}) error
 	return model.get.hooks.post(obj, exec)
 }
 
-func insertModel(model *Model, exec Executor, getPlan func(m *Model) insertPlan,
+func insertModel(ctx context.Context, model *Model, exec Executor, getPlan func(m *Model) insertPlan,
 	list []interface{}) error {
 	// This is a little trickier than might be expected because we want
 	// to minimize allocations. Doing so is somewhat straightforward
@@ -1537,7 +1649,7 @@ func insertModel(model *Model, exec Executor, getPlan func(m *Model) insertPlan,
 		serializer = &b
 	}
 
-	res, err := exec.Exec(serializer)
+	res, err := exec.ExecContext(ctx, serializer)
 	if err != nil {
 		return err
 	}
@@ -1567,13 +1679,13 @@ func insertModel(model *Model, exec Executor, getPlan func(m *Model) insertPlan,
 	return nil
 }
 
-func insertObjects(db *DB, exec Executor, getPlan func(m *Model) insertPlan, list []interface{}) error {
+func insertObjects(ctx context.Context, db *DB, exec Executor, getPlan func(m *Model) insertPlan, list []interface{}) error {
 	objs, err := groupObjects(db, list)
 	if err != nil {
 		return err
 	}
 	for model, list := range objs {
-		err := insertModel(model, exec, getPlan, list)
+		err := insertModel(ctx, model, exec, getPlan, list)
 		if err != nil {
 			return err
 		}
@@ -1581,7 +1693,7 @@ func insertObjects(db *DB, exec Executor, getPlan func(m *Model) insertPlan, lis
 	return nil
 }
 
-func selectObjects(exec Executor, dest interface{}, query interface{}, args []interface{}) error {
+func selectObjects(ctx context.Context, exec Executor, dest interface{}, query interface{}, args []interface{}) error {
 	sliceValue := reflect.ValueOf(dest)
 	if sliceValue.Kind() != reflect.Ptr {
 		return fmt.Errorf("dest must be a pointer to a slice: %T", dest)
@@ -1598,7 +1710,7 @@ func selectObjects(exec Executor, dest interface{}, query interface{}, args []in
 		modelT = modelT.Elem()
 	}
 
-	rows, err := exec.Query(query, args...)
+	rows, err := exec.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -1632,7 +1744,7 @@ func selectObjects(exec Executor, dest interface{}, query interface{}, args []in
 	return rows.Err()
 }
 
-func updateModel(model *Model, exec Executor, list []interface{}) (int64, error) {
+func updateModel(ctx context.Context, model *Model, exec Executor, list []interface{}) (int64, error) {
 	b := &UpdateBuilder{}
 	raw := make([]RawVal, len(model.update.whereTraversals))
 	hooks := model.update.hooks
@@ -1660,7 +1772,7 @@ func updateModel(model *Model, exec Executor, list []interface{}) (int64, error)
 		}
 		b.Where(where)
 
-		res, err := exec.Exec(b)
+		res, err := exec.ExecContext(ctx, b)
 		if err != nil {
 			return -1, err
 		}
@@ -1683,7 +1795,7 @@ func updateModel(model *Model, exec Executor, list []interface{}) (int64, error)
 	return count, nil
 }
 
-func updateObjects(db *DB, exec Executor, list []interface{}) (int64, error) {
+func updateObjects(ctx context.Context, db *DB, exec Executor, list []interface{}) (int64, error) {
 	objs, err := groupObjects(db, list)
 	if err != nil {
 		return -1, err
@@ -1691,7 +1803,7 @@ func updateObjects(db *DB, exec Executor, list []interface{}) (int64, error) {
 
 	var count int64
 	for model, list := range objs {
-		nrows, err := updateModel(model, exec, list)
+		nrows, err := updateModel(ctx, model, exec, list)
 		if err != nil {
 			return -1, err
 		}

@@ -720,7 +720,7 @@ func TestSelect_FailOnUnknownColumns(t *testing.T) {
 	}
 
 	i := &Object{UserID: 1, ID: "bar", Value: "hello world"}
-	if err := db.Insert(i); err != nil {
+	if err = db.Insert(i); err != nil {
 		t.Fatal(err)
 	}
 
@@ -748,7 +748,7 @@ func TestStructScan_FailOnUnknownColumns(t *testing.T) {
 	}
 
 	i := &Object{UserID: 1, ID: "bar", Value: "hello world"}
-	if err := db.Insert(i); err != nil {
+	if err = db.Insert(i); err != nil {
 		t.Fatal(err)
 	}
 
@@ -758,7 +758,7 @@ func TestStructScan_FailOnUnknownColumns(t *testing.T) {
 	q := items.Select("*").Where(items.C("user_id").Eq(1))
 	err = db.QueryRow(q).StructScan(j)
 	if err == nil {
-		t.Fatal("Expected error, but got %+v", j)
+		t.Fatalf("Expected error, but got %+v", j)
 	}
 	str := "unable to find mapping for column 'unmapped'"
 	if !strings.Contains(err.Error(), str) {
@@ -822,13 +822,9 @@ type TestLogger struct {
 	lastQuery string
 }
 
-func (l *TestLogger) Log(query Serializer, exec Executor, executionTime time.Duration, err error) {
-	if execContext, ok := exec.(ExecutorContext); ok {
-		if execContext.GetContext().Value("user_id") != "123" {
-			l.t.Fatalf("Expected context with user_id 123")
-		}
-	} else {
-		l.t.Fatalf("Expected to receive an ExecutorContext instance")
+func (l *TestLogger) Log(ctx context.Context, query Serializer, exec Executor, executionTime time.Duration, err error) {
+	if ctx.Value("user_id") != "123" {
+		l.t.Fatalf("Expected context with user_id 123")
 	}
 	l.count++
 	queryStr, _ := Serialize(query)
@@ -872,15 +868,15 @@ func TestWithContextDoesNotMutate(t *testing.T) {
 	db := makeTestDB(t, usersDDL)
 	defer db.Close()
 
-	if db.GetContext() == nil {
+	if db.Context() == nil {
 		t.Fatalf("Expected default non-nil Context on DB")
 	}
 
 	dbWithContext := db.WithContext(ctx)
-	if db.GetContext().Value("user_id") != nil {
+	if db.Context().Value("user_id") != nil {
 		t.Fatalf("Do not expect .WithContext() to mutate the DB instance")
 	}
-	if dbWithContext.GetContext().Value("user_id") != "123" {
+	if dbWithContext.Context().Value("user_id") != "123" {
 		t.Fatalf("Expect .WithContext() to return a new DB instance with the context")
 	}
 
@@ -888,15 +884,15 @@ func TestWithContextDoesNotMutate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tx.GetContext() == nil {
+	if tx.Context() == nil {
 		t.Fatalf("Expected default non-nil Context on TX")
 	}
 
 	txWithContext := tx.WithContext(ctx)
-	if tx.GetContext().Value("user_id") != nil {
+	if tx.Context().Value("user_id") != nil {
 		t.Fatalf("Do not expect .WithContext() to mutate the TX instance")
 	}
-	if txWithContext.GetContext().Value("user_id") != "123" {
+	if txWithContext.Context().Value("user_id") != "123" {
 		t.Fatalf("Expect .WithContext() to return a new TX instance with the context")
 	}
 }
@@ -917,7 +913,7 @@ func TestWithPerconaDeadline(t *testing.T) {
 	defer cancel()
 
 	db = db.WithContext(ctx).(*DB)
-	if dbDeadline, _ := db.GetContext().Deadline(); dbDeadline != later {
+	if dbDeadline, _ := db.Context().Deadline(); dbDeadline != later {
 		t.Fatalf("Expected db.GetContext.Deadline() to return %v, got %v", later, dbDeadline)
 	}
 
@@ -925,7 +921,7 @@ func TestWithPerconaDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if txDeadline, _ := tx.GetContext().Deadline(); txDeadline != later {
+	if txDeadline, _ := tx.Context().Deadline(); txDeadline != later {
 		t.Fatalf("Expected tx.GetContext.Deadline() to return %v, got %v", later, txDeadline)
 	}
 
@@ -958,7 +954,7 @@ func TestWithMySql57Deadline(t *testing.T) {
 	defer cancel()
 
 	db = db.WithContext(ctx).(*DB)
-	if dbDeadline, _ := db.GetContext().Deadline(); dbDeadline != later {
+	if dbDeadline, _ := db.Context().Deadline(); dbDeadline != later {
 		t.Fatalf("Expected db.GetContext.Deadline() to return %v, got %v", later, dbDeadline)
 	}
 
@@ -966,7 +962,7 @@ func TestWithMySql57Deadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if txDeadline, _ := tx.GetContext().Deadline(); txDeadline != later {
+	if txDeadline, _ := tx.Context().Deadline(); txDeadline != later {
 		t.Fatalf("Expected tx.GetContext.Deadline() to return %v, got %v", later, txDeadline)
 	}
 
@@ -996,7 +992,7 @@ func TestWithoutDeadline(t *testing.T) {
 	ctx = context.WithValue(ctx, "user_id", "123")
 
 	db = db.WithContext(ctx).(*DB)
-	if dbDeadline, ok := db.GetContext().Deadline(); ok {
+	if dbDeadline, ok := db.Context().Deadline(); ok {
 		t.Fatalf("Unexpected db.GetContext.Deadline(): %v", dbDeadline)
 	}
 
@@ -1004,7 +1000,7 @@ func TestWithoutDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if txDeadline, ok := tx.GetContext().Deadline(); ok {
+	if txDeadline, ok := tx.Context().Deadline(); ok {
 		t.Fatalf("Unexpected tx.GetContext.Deadline(): %v", txDeadline)
 	}
 
@@ -1017,6 +1013,29 @@ func TestWithoutDeadline(t *testing.T) {
 	err = tx.Commit()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInsertContextValue(t *testing.T) {
+	logger := &TestLogger{
+		t:     t,
+		count: 0,
+	}
+
+	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", User{}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), "user_id", "123")
+
+	if err := db.InsertContext(ctx, &User{Name: "foo"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if logger.count != 1 {
+		t.Fatal("Expected one call to TestLogger.Log")
 	}
 }
 

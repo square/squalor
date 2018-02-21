@@ -17,6 +17,8 @@ package squalor
 import (
 	"log"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 // QueryLogger defines an interface for query loggers.
@@ -27,7 +29,7 @@ type QueryLogger interface {
 	//
 	// The Executor may be used to trace queries within a transaction because
 	// queries in the same transaction will use the same executor.
-	Log(query Serializer, exec Executor, executionTime time.Duration, err error)
+	Log(ctx context.Context, query Serializer, exec Executor, executionTime time.Duration, err error)
 }
 
 // StandardLogger implements the QueryLogger interface and wraps a log.Logger.
@@ -35,29 +37,15 @@ type StandardLogger struct {
 	*log.Logger
 }
 
-func (l *StandardLogger) Log(query Serializer, exec Executor, executionTime time.Duration, err error) {
+func (l *StandardLogger) Log(ctx context.Context, query Serializer, exec Executor, executionTime time.Duration, err error) {
 	querystr, serializeErr := Serialize(query)
 	if serializeErr != nil {
 		return
 	}
 
-	// The caller of the query can set a Context object on the database or transaction prior to
-	// issuing the query using the WithContext function, for example:
-	//
-	// tx.WithContext(context.WithValue(ctx, "user_id", userId).Query(...)
-	//
-	// The Context may be obtained inside this function by checking whether the Executor
-	// implements the ExecutorContext interface, and if so calling GetContext on it, for example:
-	//
-	// var userId interface{} = "<unknown>"
-	// if execContext, ok := exec.(ExecutorContext); ok {
-	// 	userId = execContext.GetContext().Value("user_id")
-	// }
-	// l.Printf("[%p] [user_id=%v] %s - `%s` - %s\n", exec, userId, executionTime, querystr, err)
-
 	if err != nil {
-		l.Printf("[%p] %s - `%s` - %s\n", exec, executionTime, querystr, err)
+		l.Printf("[%v] %s - `%s` - %s\n", exec, executionTime, querystr, err)
 	} else {
-		l.Printf("[%p] %s - `%s`\n", exec, executionTime, querystr)
+		l.Printf("[%v] %s - `%s`\n", exec, executionTime, querystr)
 	}
 }

@@ -37,5 +37,14 @@ func query(ctx context.Context, ex executor, query string, args ...interface{}) 
 }
 
 func begin(db *DB) (*sql.Tx, error) {
-	return db.DB.BeginTx(db.context, nil)
+	return db.DB.BeginTx(db.Context(), nil)
+}
+
+// BeginTx begins a transaction with the provided context and options.
+func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
+	tx, err := db.DB.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &Tx{Tx: tx, DB: db}, nil
 }
