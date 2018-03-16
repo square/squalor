@@ -71,6 +71,17 @@ type abstractTable interface {
 	columnCount(name string) int
 }
 
+// The Selectable interface is a type for structs that provide the Select function.
+// The types that implement this interface are Table and JoinBuilder.
+// This interface is not used by Squalor itself, it is provided so that users can create functions
+// that can accept either of these two types.
+type Selectable interface {
+	Select(exprs ...interface{}) *squalor.SelectBuilder
+}
+
+var _ Selectable = &JoinBuilder{}
+var _ Selectable = &Table{}
+
 // JoinBuilder aids the construction of JOIN expressions, providing
 // methods for specifying the join condition.
 type JoinBuilder struct {
