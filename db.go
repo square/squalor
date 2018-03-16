@@ -308,6 +308,11 @@ func (m *Model) All() ValExprBuilder {
 	return m.Table.All()
 }
 
+// GetTable gets a pointer to the table
+func (m *Model) GetTable() *Table {
+	return &m.Table
+}
+
 func getColumnNames(columns []*Column) []string {
 	var colNames []string
 	for _, c := range columns {
