@@ -450,10 +450,6 @@ func TestSerializeWithPlaceholders(t *testing.T) {
 	users := NewTable("users", User{})
 	foo := users.C("foo")
 
-	type Object struct {
-		Foo, Baz string
-	}
-
 	testCases := []struct {
 		builder  *SelectBuilder
 		expected string
@@ -577,4 +573,41 @@ func ExampleTable_Join() {
 		fmt.Println(sql)
 	}
 	// Output: SELECT * FROM `users` INNER JOIN `objects` USING (`id`)
+}
+
+func TestJoinMultipleTables(t *testing.T) {
+	expectedSQL := "SELECT `v`.`model`, `u`.`first_name`, `a`.`zip_code` FROM `users` AS `u` " +
+		"INNER JOIN `address` AS `a` ON `u`.`id` = `a`.`user_id` " +
+		"INNER JOIN `vehicles` AS `v` ON `u`.`id` = `v`.`user_id` " +
+		"WHERE `u`.`id` = 1234"
+
+	type User struct {
+		ID        int    `db:"id"`
+		FirstName string `db:"first_name"`
+		LastName  string `db:"last_name"`
+	}
+	type Address struct {
+		UserID  int    `db:"user_id"`
+		ZipCode int    `db:"zip_code"`
+		Street  string `db:"street"`
+	}
+	type Vehicle struct {
+		UserID int    `db:"user_id"`
+		Make   string `db:"make"`
+		Model  string `db:model`
+	}
+
+	users := NewAliasedTable("users", "u", User{})
+	addresses := NewAliasedTable("address", "a", Address{})
+	vehicles := NewAliasedTable("vehicles", "v", Vehicle{})
+	q := users.InnerJoin(addresses).On(users.C("id").Eq(addresses.C("user_id"))).
+		InnerJoin(vehicles).On(users.C("id").Eq(vehicles.C("user_id"))).
+		Select(vehicles.C("model"), users.C("first_name"), addresses.C("zip_code")).
+		Where(users.C("id").Eq(1234))
+
+	if sql, err := Serialize(q); err != nil {
+		t.Fatal(err)
+	} else if sql != expectedSQL {
+		t.Errorf("Expected %s but got %s", expectedSQL, sql)
+	}
 }
