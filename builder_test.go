@@ -575,55 +575,31 @@ func ExampleTable_Join() {
 	// Output: SELECT * FROM `users` INNER JOIN `objects` USING (`id`)
 }
 
-func TestExampleTable_Join(t *testing.T) {
-	//type User struct {
-	//	ID              int    `db:"id"`
-	//	ObjectID        int    `db:"object_id"`
-	//	MasterCatalogID int    `db:"master_catalog_id"`
-	//}
-	//users := NewTable("word", &User{})
-	//type Object struct {
-	//	ID              int    `db:"id"`
-	//	Token           string `db:"token"`
-	//	MasterCatalogID int    `db:"master_catalog_id"`
-	//}
-	//objects := NewTable("object", Object{})
-	//type Attribute struct {
-	//	ID              int    `db:"id"`
-	//	DefinitionID    int    `db:"attribute_definition_id"`
-	//	StringValue     string `db:"string_value"`
-	//	IntValue        int    `db:"int_value"`
-	//	ObjectID        int    `db:"object_id"`
-	//	MasterCatalogID int    `db:"master_catalog_id"`
-	//	ObjectType      int    `db:"object_type"`
-	//	DeletedBy       *int   `db:"deleted_by"`
-	//}
-	//attr_variation := NewAliasedTable("attribute", "attr_variation", Attribute{})
-	//attr_item := NewAliasedTable("attribute", "attr_items", Attribute{})
-	//q := attr_variation.InnerJoin(words).On(words.C("object_id").Eq(attr_variation.C("object_id"))).
-	//	InnerJoin(objects).On(objects.C("token").Eq(attr_variation.C("string_value"))).
-	//	InnerJoin(attr_item).On(objects.C("id").Eq(attr_item.C("object_id"))).
-	//	Select(
-	//	objects.C("id").As("item_object_id"),
-	//	words.C("object_id").As("word_object_id"),
-	//	attr_item.C("string_value").As("item_name")).
-	//	Where(words.C("master_catalog_id").Eq(1403016).
-	//	And(words.C("version").Eq(1)).
-	//	And(attr_variation.C("object_type").Eq(5)).
-	//	And(attr_variation.C("attribute_definition_id").Eq(4285)).
-	//	And(attr_variation.C("deleted_by").IsNull()).
-	//	And(attr_item.C("attribute_definition_id").Eq(3)).
-	//	And(words.C("word").Like("Apple")).
-	//	And(attr_item.C("deleted_by").IsNull())).
-	//	OrderBy(attr_item.C("string_value").Ascending())
-	//if sql, err := Serialize(q); err != nil {
-	//	t.Fatal(err)
-	//} else {
-	//	t.Log(sql)
-	//}
-	//// Output: SELECT *
-}
-
-func TestMultipleJoinBuilder(t *testing.T) {
-
+func TestJoinMultipleTables(t *testing.T) {
+	expectedSQL := "SELECT `v`.`model`, `u`.`first_name`, `a`.`zip_code` FROM `users` AS `u` INNER JOIN `address` AS `a` ON `u`.`id` = `a`.`user_id` INNER JOIN `vehicles` AS `v` ON `u`.`id` = `v`.`user_id` WHERE `u`.`id` = 1234"
+	type User struct {
+		ID        int    `db:"id"`
+		FirstName string `db:"first_name"`
+		LastName  string `db:"last_name"`
+	}
+	type Address struct {
+		UserID  int    `db:"user_id"`
+		ZipCode int    `db:"zip_code"`
+		Street  string `db:"street"`
+	}
+	type Vehicle struct {
+		UserID int    `db:"user_id"`
+		Make   string `db:"make"`
+		Model  string `db:model`
+	}
+	users := NewAliasedTable("users", "u", User{})
+	addresses := NewAliasedTable("address", "a", Address{})
+	vehicles := NewAliasedTable("vehicles", "v", Vehicle{})
+	q := users.InnerJoin(addresses).On(users.C("id").Eq(addresses.C("user_id"))).InnerJoin(vehicles).On(users.C("id").Eq(vehicles.C("user_id"))).
+		Select(vehicles.C("model"), users.C("first_name"), addresses.C("zip_code")).Where(users.C("id").Eq(1234))
+	if sql, err := Serialize(q); err != nil {
+		t.Fatal(err)
+	} else if sql != expectedSQL {
+		t.Errorf("Expected %s but got %s", expectedSQL, sql)
+	}
 }

@@ -758,7 +758,7 @@ func TestStructScan_FailOnUnknownColumns(t *testing.T) {
 	q := items.Select("*").Where(items.C("user_id").Eq(1))
 	err = db.QueryRow(q).StructScan(j)
 	if err == nil {
-		t.Fatal("Expected error, but got %+v", j)
+		t.Fatalf("Expected error, but got %+v", j)
 	}
 	str := "unable to find mapping for column 'unmapped'"
 	if !strings.Contains(err.Error(), str) {
