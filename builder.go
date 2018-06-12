@@ -91,17 +91,17 @@ func makeJoinBuilder(join string, left, right abstractTable) *JoinBuilder {
 
 // InnerJoin creates a INNER JOIN statement builder
 func (b *JoinBuilder) InnerJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("INNER JOIN", b, other)
+	return makeJoinBuilder(astJoin, b, other)
 }
 
 // LeftJoin creates a LEFT JOIN statement builder.
 func (b *JoinBuilder) LeftJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("LEFT JOIN", b, other)
+	return makeJoinBuilder(astLeftJoin, b, other)
 }
 
 // RightJoin creates a RIGHT JOIN statement builder.
 func (b *JoinBuilder) RightJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("RIGHT JOIN", b, other)
+	return makeJoinBuilder(astRightJoin, b, other)
 }
 
 // Select creates a SELECT statement builder.

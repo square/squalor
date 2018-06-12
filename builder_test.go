@@ -602,8 +602,8 @@ func TestJoinBuilder(t *testing.T) {
 			vehicle:     NewAliasedTable("vehicle", "v", vehicle{}),
 			address:     NewAliasedTable("address", "a", address{}),
 			expectedSQL: "SELECT `v`.`model`, `u`.`first_name`, `a`.`zip_code` FROM `user` AS `u` " +
-				"INNER JOIN `address` AS `a` ON `u`.`id` = `a`.`user_id` " +
-				"INNER JOIN `vehicle` AS `v` ON `u`.`id` = `v`.`user_id` " +
+				"JOIN `address` AS `a` ON `u`.`id` = `a`.`user_id` " +
+				"JOIN `vehicle` AS `v` ON `u`.`id` = `v`.`user_id` " +
 				"WHERE `u`.`id` = 1234",
 		},
 		{
@@ -612,8 +612,8 @@ func TestJoinBuilder(t *testing.T) {
 			vehicle:     NewTable("vehicle", vehicle{}),
 			address:     NewTable("address", address{}),
 			expectedSQL: "SELECT `vehicle`.`model`, `user`.`first_name`, `address`.`zip_code` FROM `user` " +
-				"INNER JOIN `address` ON `user`.`id` = `address`.`user_id` " +
-				"INNER JOIN `vehicle` ON `user`.`id` = `vehicle`.`user_id` " +
+				"JOIN `address` ON `user`.`id` = `address`.`user_id` " +
+				"JOIN `vehicle` ON `user`.`id` = `vehicle`.`user_id` " +
 				"WHERE `user`.`id` = 1234",
 		},
 		{
@@ -622,8 +622,8 @@ func TestJoinBuilder(t *testing.T) {
 			vehicle:     NewAliasedTable("vehicle", "v", vehicle{}),
 			address:     NewTable("address", address{}),
 			expectedSQL: "SELECT `v`.`model`, `user`.`first_name`, `address`.`zip_code` FROM `user` " +
-				"INNER JOIN `address` ON `user`.`id` = `address`.`user_id` " +
-				"INNER JOIN `vehicle` AS `v` ON `user`.`id` = `v`.`user_id` " +
+				"JOIN `address` ON `user`.`id` = `address`.`user_id` " +
+				"JOIN `vehicle` AS `v` ON `user`.`id` = `v`.`user_id` " +
 				"WHERE `user`.`id` = 1234",
 		},
 	}
@@ -637,7 +637,7 @@ func TestJoinBuilder(t *testing.T) {
 		if sql, err := Serialize(q); err != nil {
 			t.Fatal(err)
 		} else if sql != testCase.expectedSQL {
-			t.Errorf("Expected\n  %s\n but have\n %s\n", testCase.expectedSQL, sql)
+			t.Errorf("Expected\n %s\n but have\n %s\n", testCase.expectedSQL, sql)
 		}
 	}
 }

@@ -247,17 +247,17 @@ func (t *Table) All() ValExprBuilder {
 // join and join are synonymous in MySQL. Inner join is used here for
 // clarity.
 func (t *Table) InnerJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("INNER JOIN", t, other)
+	return makeJoinBuilder(astJoin, t, other)
 }
 
 // LeftJoin creates a LEFT JOIN statement builder.
 func (t *Table) LeftJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("LEFT JOIN", t, other)
+	return makeJoinBuilder(astLeftJoin, t, other)
 }
 
 // RightJoin creates a RIGHT JOIN statement builder.
 func (t *Table) RightJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("RIGHT JOIN", t, other)
+	return makeJoinBuilder(astRightJoin, t, other)
 }
 
 // Delete creates a DELETE statement builder.
