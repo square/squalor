@@ -124,6 +124,7 @@ func (k *Key) matches(cols ...string) bool {
 // Table models a database table containing column and key definitions.
 type Table struct {
 	Name       string
+	Alias      string
 	Columns    []*Column
 	ColumnMap  map[string]*Column
 	PrimaryKey *Key
@@ -151,6 +152,16 @@ func NewTable(name string, model interface{}) *Table {
 		t.ColumnMap[k] = col
 	}
 	sort.Sort(byName(t.Columns))
+	return t
+}
+
+// NewAliasedTable constructs a table with an alias from a model struct. The
+// alias will be used in column names and in joins. The resulting
+// table is less detailed than one created from LoadTable due to the
+// lack of keys of type info.
+func NewAliasedTable(name, alias string, model interface{}) *Table {
+	t := NewTable(name, model)
+	t.Alias = alias
 	return t
 }
 
@@ -201,19 +212,20 @@ func (t *Table) C(cols ...string) ValExprBuilder {
 	if len(cols) == 0 {
 		return ValExprBuilder{makeErrVal("no columns specified")}
 	}
+
 	if len(cols) == 1 {
 		name := cols[0]
 		if _, ok := t.ColumnMap[name]; !ok {
 			return ValExprBuilder{makeErrVal("unknown column: %s", name)}
 		}
-		return ValExprBuilder{&ColName{Name: name, Qualifier: t.Name}}
+		return ValExprBuilder{&ColName{Name: name, Qualifier: t.aliasOrName()}}
 	}
 	list := make([]interface{}, len(cols))
 	for i, name := range cols {
 		if _, ok := t.ColumnMap[name]; !ok {
 			list[i] = makeErrVal("unknown column: %s", name)
 		} else {
-			list[i] = &ColName{Name: name, Qualifier: t.Name}
+			list[i] = &ColName{Name: name, Qualifier: t.aliasOrName()}
 		}
 	}
 	return ValExprBuilder{makeValTuple(list)}
@@ -226,7 +238,7 @@ func (t *Table) C(cols ...string) ValExprBuilder {
 func (t *Table) All() ValExprBuilder {
 	list := make([]interface{}, len(t.Columns))
 	for i, col := range t.Columns {
-		list[i] = &ColName{Name: col.Name, Qualifier: t.Name}
+		list[i] = &ColName{Name: col.Name, Qualifier: t.aliasOrName()}
 	}
 	return ValExprBuilder{makeValTuple(list)}
 }
@@ -235,17 +247,17 @@ func (t *Table) All() ValExprBuilder {
 // join and join are synonymous in MySQL. Inner join is used here for
 // clarity.
 func (t *Table) InnerJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("INNER JOIN", t, other)
+	return makeJoinBuilder(astJoin, t, other)
 }
 
 // LeftJoin creates a LEFT JOIN statement builder.
 func (t *Table) LeftJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("LEFT JOIN", t, other)
+	return makeJoinBuilder(astLeftJoin, t, other)
 }
 
 // RightJoin creates a RIGHT JOIN statement builder.
 func (t *Table) RightJoin(other *Table) *JoinBuilder {
-	return makeJoinBuilder("RIGHT JOIN", t, other)
+	return makeJoinBuilder(astRightJoin, t, other)
 }
 
 // Delete creates a DELETE statement builder.
@@ -302,6 +314,15 @@ func (t *Table) ValidateModel(model interface{}) error {
 	return t.validateFields(m)
 }
 
+// aliasOrName will return table's alias if its not blank
+// Otherwise it will use the table's name.
+func (t *Table) aliasOrName() string {
+	if t.Alias != "" {
+		return t.Alias
+	}
+	return t.Name
+}
+
 // loadColumns loads a table's columns from a database. MySQL
 // specific.
 func (t *Table) loadColumns(db *sql.DB) error {
@@ -356,9 +377,14 @@ func (t *Table) loadColumns(db *sql.DB) error {
 }
 
 func (t *Table) tableExpr() TableExpr {
-	return &AliasedTableExpr{
+	ate := &AliasedTableExpr{
 		Expr: &TableName{Name: t.Name},
 	}
+	if t.Alias != "" {
+		ate.As = t.Alias
+	}
+
+	return ate
 }
 
 func (t *Table) tableExists(name string) bool {

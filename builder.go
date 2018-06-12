@@ -79,7 +79,7 @@ type JoinBuilder struct {
 	rightTable abstractTable
 }
 
-func makeJoinBuilder(join string, left, right *Table) *JoinBuilder {
+func makeJoinBuilder(join string, left, right abstractTable) *JoinBuilder {
 	j := &JoinBuilder{}
 	j.Join = join
 	j.leftTable = left
@@ -87,6 +87,21 @@ func makeJoinBuilder(join string, left, right *Table) *JoinBuilder {
 	j.rightTable = right
 	j.RightExpr = right.tableExpr()
 	return j
+}
+
+// InnerJoin creates a INNER JOIN statement builder
+func (b *JoinBuilder) InnerJoin(other *Table) *JoinBuilder {
+	return makeJoinBuilder(astJoin, b, other)
+}
+
+// LeftJoin creates a LEFT JOIN statement builder.
+func (b *JoinBuilder) LeftJoin(other *Table) *JoinBuilder {
+	return makeJoinBuilder(astLeftJoin, b, other)
+}
+
+// RightJoin creates a RIGHT JOIN statement builder.
+func (b *JoinBuilder) RightJoin(other *Table) *JoinBuilder {
+	return makeJoinBuilder(astRightJoin, b, other)
 }
 
 // Select creates a SELECT statement builder.
