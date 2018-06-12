@@ -182,7 +182,7 @@ func LoadTable(db *sql.DB, name string) (*Table, error) {
 func (t *Table) String() string {
 	var buf bytes.Buffer
 	tab := tabwriter.NewWriter(&buf, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(tab, "%s:\n", t.getName())
+	fmt.Fprintf(tab, "%s:\n", t.Name)
 	fmt.Fprintf(tab, "  columns:\n")
 	for _, col := range t.Columns {
 		fmt.Fprintf(tab, "    %s\n", col)
@@ -218,14 +218,14 @@ func (t *Table) C(cols ...string) ValExprBuilder {
 		if _, ok := t.ColumnMap[name]; !ok {
 			return ValExprBuilder{makeErrVal("unknown column: %s", name)}
 		}
-		return ValExprBuilder{&ColName{Name: name, Qualifier: t.getName()}}
+		return ValExprBuilder{&ColName{Name: name, Qualifier: t.aliasOrName()}}
 	}
 	list := make([]interface{}, len(cols))
 	for i, name := range cols {
 		if _, ok := t.ColumnMap[name]; !ok {
 			list[i] = makeErrVal("unknown column: %s", name)
 		} else {
-			list[i] = &ColName{Name: name, Qualifier: t.getName()}
+			list[i] = &ColName{Name: name, Qualifier: t.aliasOrName()}
 		}
 	}
 	return ValExprBuilder{makeValTuple(list)}
@@ -238,7 +238,7 @@ func (t *Table) C(cols ...string) ValExprBuilder {
 func (t *Table) All() ValExprBuilder {
 	list := make([]interface{}, len(t.Columns))
 	for i, col := range t.Columns {
-		list[i] = &ColName{Name: col.Name, Qualifier: t.getName()}
+		list[i] = &ColName{Name: col.Name, Qualifier: t.aliasOrName()}
 	}
 	return ValExprBuilder{makeValTuple(list)}
 }
@@ -262,7 +262,7 @@ func (t *Table) RightJoin(other *Table) *JoinBuilder {
 
 // Delete creates a DELETE statement builder.
 func (t *Table) Delete() *DeleteBuilder {
-	return makeDeleteBuilder(t.getName())
+	return makeDeleteBuilder(t.Name)
 }
 
 // Insert creates an INSERT statement builder.
@@ -290,16 +290,16 @@ func (t *Table) validateFields(m fieldMap) error {
 	for name, field := range m {
 		c1 := t.ColumnMap[name]
 		if c1 == nil {
-			return fmt.Errorf("%s: model column '%s' not found in table", t.getName(), name)
+			return fmt.Errorf("%s: model column '%s' not found in table", t.Name, name)
 		}
 		if err := validateModelType(c1.sqlType, field.Type); err != nil {
-			return fmt.Errorf("%s: '%s': %s", t.getName(), name, err)
+			return fmt.Errorf("%s: '%s': %s", t.Name, name, err)
 		}
 	}
 	// Verify all of the table columns exist in the model.
 	for name := range t.ColumnMap {
 		if _, ok := m[name]; !ok {
-			return fmt.Errorf("%s: table column '%s' not found in model", t.getName(), name)
+			return fmt.Errorf("%s: table column '%s' not found in model", t.Name, name)
 		}
 	}
 	return nil
@@ -314,9 +314,9 @@ func (t *Table) ValidateModel(model interface{}) error {
 	return t.validateFields(m)
 }
 
-// getName will return table's alias if its not blank
+// aliasOrName will return table's alias if its not blank
 // Otherwise it will use the table's name.
-func (t *Table) getName() string {
+func (t *Table) aliasOrName() string {
 	if t.Alias != "" {
 		return t.Alias
 	}
@@ -326,7 +326,7 @@ func (t *Table) getName() string {
 // loadColumns loads a table's columns from a database. MySQL
 // specific.
 func (t *Table) loadColumns(db *sql.DB) error {
-	rows, err := db.Query("SHOW FULL COLUMNS FROM " + t.getName())
+	rows, err := db.Query("SHOW FULL COLUMNS FROM " + t.Name)
 	if err != nil {
 		return err
 	}
@@ -388,13 +388,13 @@ func (t *Table) tableExpr() TableExpr {
 }
 
 func (t *Table) tableExists(name string) bool {
-	return t.getName() == name
+	return t.Name == name
 }
 
 func (t *Table) column(name string) *ColName {
 	parts := strings.Split(name, ".")
 	if len(parts) == 2 {
-		if parts[0] != t.getName() {
+		if parts[0] != t.Name {
 			return nil
 		}
 		name = parts[1]
@@ -402,7 +402,7 @@ func (t *Table) column(name string) *ColName {
 	if _, ok := t.ColumnMap[name]; !ok {
 		return nil
 	}
-	return &ColName{Name: name, Qualifier: t.getName()}
+	return &ColName{Name: name, Qualifier: t.Name}
 }
 
 func (t *Table) columnCount(name string) int {
@@ -415,7 +415,7 @@ func (t *Table) columnCount(name string) int {
 // loadKeys loads a table's keys (indexes) from a database. MySQL
 // specific.
 func (t *Table) loadKeys(db *sql.DB) error {
-	rows, err := db.Query("SHOW INDEX FROM " + t.getName())
+	rows, err := db.Query("SHOW INDEX FROM " + t.Name)
 	if err != nil {
 		return err
 	}

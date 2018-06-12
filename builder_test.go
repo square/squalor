@@ -575,39 +575,69 @@ func ExampleTable_Join() {
 	// Output: SELECT * FROM `users` INNER JOIN `objects` USING (`id`)
 }
 
-func TestJoinMultipleTables(t *testing.T) {
-	expectedSQL := "SELECT `v`.`model`, `u`.`first_name`, `a`.`zip_code` FROM `users` AS `u` " +
-		"INNER JOIN `address` AS `a` ON `u`.`id` = `a`.`user_id` " +
-		"INNER JOIN `vehicles` AS `v` ON `u`.`id` = `v`.`user_id` " +
-		"WHERE `u`.`id` = 1234"
-
-	type User struct {
+func TestJoinBuilder(t *testing.T) {
+	type user struct {
 		ID        int    `db:"id"`
 		FirstName string `db:"first_name"`
 		LastName  string `db:"last_name"`
 	}
-	type Address struct {
+	type address struct {
 		UserID  int    `db:"user_id"`
 		ZipCode int    `db:"zip_code"`
 		Street  string `db:"street"`
 	}
-	type Vehicle struct {
+	type vehicle struct {
 		UserID int    `db:"user_id"`
 		Make   string `db:"make"`
-		Model  string `db:model`
+		Model  string `db:"model"`
 	}
 
-	users := NewAliasedTable("users", "u", User{})
-	addresses := NewAliasedTable("address", "a", Address{})
-	vehicles := NewAliasedTable("vehicles", "v", Vehicle{})
-	q := users.InnerJoin(addresses).On(users.C("id").Eq(addresses.C("user_id"))).
-		InnerJoin(vehicles).On(users.C("id").Eq(vehicles.C("user_id"))).
-		Select(vehicles.C("model"), users.C("first_name"), addresses.C("zip_code")).
-		Where(users.C("id").Eq(1234))
+	testCases := []struct {
+		description, expectedSQL string
+		user, vehicle, address   *Table
+	}{
+		{
+			description: "All aliased",
+			user:        NewAliasedTable("user", "u", user{}),
+			vehicle:     NewAliasedTable("vehicle", "v", vehicle{}),
+			address:     NewAliasedTable("address", "a", address{}),
+			expectedSQL: "SELECT `v`.`model`, `u`.`first_name`, `a`.`zip_code` FROM `user` AS `u` " +
+				"INNER JOIN `address` AS `a` ON `u`.`id` = `a`.`user_id` " +
+				"INNER JOIN `vehicle` AS `v` ON `u`.`id` = `v`.`user_id` " +
+				"WHERE `u`.`id` = 1234",
+		},
+		{
+			description: "No aliases",
+			user:        NewTable("user", user{}),
+			vehicle:     NewTable("vehicle", vehicle{}),
+			address:     NewTable("address", address{}),
+			expectedSQL: "SELECT `vehicle`.`model`, `user`.`first_name`, `address`.`zip_code` FROM `user` " +
+				"INNER JOIN `address` ON `user`.`id` = `address`.`user_id` " +
+				"INNER JOIN `vehicle` ON `user`.`id` = `vehicle`.`user_id` " +
+				"WHERE `user`.`id` = 1234",
+		},
+		{
+			description: "Some aliases",
+			user:        NewTable("user", user{}),
+			vehicle:     NewAliasedTable("vehicle", "v", vehicle{}),
+			address:     NewTable("address", address{}),
+			expectedSQL: "SELECT `v`.`model`, `user`.`first_name`, `address`.`zip_code` FROM `user` " +
+				"INNER JOIN `address` ON `user`.`id` = `address`.`user_id` " +
+				"INNER JOIN `vehicle` AS `v` ON `user`.`id` = `v`.`user_id` " +
+				"WHERE `user`.`id` = 1234",
+		},
+	}
 
-	if sql, err := Serialize(q); err != nil {
-		t.Fatal(err)
-	} else if sql != expectedSQL {
-		t.Errorf("Expected %s but got %s", expectedSQL, sql)
+	for _, testCase := range testCases {
+		q := testCase.user.InnerJoin(testCase.address).On(testCase.user.C("id").Eq(testCase.address.C("user_id"))).
+			InnerJoin(testCase.vehicle).On(testCase.user.C("id").Eq(testCase.vehicle.C("user_id"))).
+			Select(testCase.vehicle.C("model"), testCase.user.C("first_name"), testCase.address.C("zip_code")).
+			Where(testCase.user.C("id").Eq(1234))
+
+		if sql, err := Serialize(q); err != nil {
+			t.Fatal(err)
+		} else if sql != testCase.expectedSQL {
+			t.Errorf("Expected\n  %s\n but have\n %s\n", testCase.expectedSQL, sql)
+		}
 	}
 }
