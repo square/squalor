@@ -314,8 +314,8 @@ func (t *Table) ValidateModel(model interface{}) error {
 	return t.validateFields(m)
 }
 
-// aliasOrName will return table's alias if its not blank
-// Otherwise it will use the table's name.
+// aliasOrName will return table's alias if it is not blank,
+// otherwise it will return the table's name.
 func (t *Table) aliasOrName() string {
 	if t.Alias != "" {
 		return t.Alias
