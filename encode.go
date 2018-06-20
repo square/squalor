@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"strconv"
 	"time"
+	"unicode/utf8"
 )
 
 var (
@@ -98,6 +99,16 @@ func encodeSQLValue(w io.Writer, arg interface{}) error {
 }
 
 func encodeSQLString(w io.Writer, in string) error {
+	if !utf8.ValidString(in) {
+		// This function has been written to escape/encode UTF-8 strings,
+		// if the input is a multibyte string from a non-UTF8 encoding we
+		// won't be able to correctly escape it which can lead to injection
+		// if the connection is configured to have a weird charset. A better
+		// fix would use the database's native escape function, but it's hard
+		// to do that in a library that supports multiple DBs transparently
+		// like this one.
+		return fmt.Errorf("invalid utf-8 string: %s", in)
+	}
 	if _, err := w.Write(singleQuote); err != nil {
 		return err
 	}
