@@ -125,6 +125,7 @@ func (k *Key) matches(cols ...string) bool {
 type Table struct {
 	Name       string
 	Alias      string
+	IndexHints *IndexHints
 	Columns    []*Column
 	ColumnMap  map[string]*Column
 	PrimaryKey *Key
@@ -203,6 +204,32 @@ func (t *Table) GetKey(cols ...string) *Key {
 		}
 	}
 	return nil
+}
+
+// Apply a "USE INDEX" hint to a table. This will replace any existing index hints.
+func (t *Table) UseIndex(indexes ...string) *Table {
+	return t.setIndexHint(astUse, indexes)
+}
+
+// Apply a "FORCE INDEX" hint to a table. This will replace any existing index hints.
+func (t *Table) ForceIndex(indexes ...string) *Table {
+	return t.setIndexHint(astForce, indexes)
+}
+
+// Apply an "IGNORE INDEX" hint to a table. This will replace any existing index hints.
+func (t *Table) IgnoreIndex(indexes ...string) *Table {
+	return t.setIndexHint(astIgnore, indexes)
+}
+
+func (t *Table) setIndexHint(hintType string, indexes []string) *Table {
+	tableCopy := *t
+	indexesCopy := make([]string, len(indexes))
+	copy(indexesCopy, indexes)
+	tableCopy.IndexHints = &IndexHints{
+		Type:    hintType,
+		Indexes: indexesCopy,
+	}
+	return &tableCopy
 }
 
 // C returns an expression for the specified list of columns. An error
@@ -382,6 +409,9 @@ func (t *Table) tableExpr() TableExpr {
 	}
 	if t.Alias != "" {
 		ate.As = t.Alias
+	}
+	if t.IndexHints != nil {
+		ate.Hints = t.IndexHints
 	}
 
 	return ate
