@@ -474,6 +474,12 @@ func TestSerializeWithPlaceholders(t *testing.T) {
 			"SELECT `users`.`foo` FROM `users` WHERE `users`.`foo` IN (?, ?)"},
 		{users.Select(foo).Where(foo.Like("baz")),
 			"SELECT `users`.`foo` FROM `users` WHERE `users`.`foo` LIKE ?"},
+		{users.UseIndex("index_one").Select("*").Where(foo.Eq(1)),
+			"SELECT * FROM `users` USE INDEX (index_one) WHERE `users`.`foo` = ?"},
+		{users.ForceIndex("index_one", "index_two").Select("*").Where(foo.Eq(1)),
+			"SELECT * FROM `users` FORCE INDEX (index_one, index_two) WHERE `users`.`foo` = ?"},
+		{users.IgnoreIndex("index_one", "index_two", "index_three").Select("*").Where(foo.Eq(1)),
+			"SELECT * FROM `users` IGNORE INDEX (index_one, index_two, index_three) WHERE `users`.`foo` = ?"},
 	}
 
 	for _, c := range testCases {
@@ -481,6 +487,9 @@ func TestSerializeWithPlaceholders(t *testing.T) {
 			t.Errorf("Expected success, but found %s\n%s", err, c.expected)
 		} else if c.expected != sql {
 			t.Errorf("Expected\n%s\nbut got\n%s", c.expected, sql)
+		}
+		if users.IndexHints != nil {
+			t.Errorf("IndexHints should not be set on original table")
 		}
 	}
 }
