@@ -917,6 +917,9 @@ func TestWithPerconaDeadline(t *testing.T) {
 		t.Fatalf("Expected db.GetContext.Deadline() to return %v, got %v", later, dbDeadline)
 	}
 
+	// Test tx.Query
+	logger.lastQuery = ""
+
 	tx, err := db.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -935,6 +938,49 @@ func TestWithPerconaDeadline(t *testing.T) {
 	err = tx.Commit()
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// Test db.Query
+	logger.lastQuery = ""
+
+	db.Query("SELECT * from objects")
+
+	if !strings.HasPrefix(logger.lastQuery, "SET STATEMENT max_statement_time=") ||
+		!strings.HasSuffix(logger.lastQuery, " FOR SELECT * from objects") {
+		t.Fatalf("Expected %q, got %q", "SET STATEMENT max_statement_time=? FOR SELECT * from objects", logger.lastQuery)
+	}
+
+	// Test tx.QueryRow
+	logger.lastQuery = ""
+
+	tx, err = db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txDeadline, _ := tx.Context().Deadline(); txDeadline != later {
+		t.Fatalf("Expected tx.GetContext.Deadline() to return %v, got %v", later, txDeadline)
+	}
+
+	tx.QueryRow("SELECT * from objects LIMIT 1")
+
+	if !strings.HasPrefix(logger.lastQuery, "SET STATEMENT max_statement_time=") ||
+		!strings.HasSuffix(logger.lastQuery, " FOR SELECT * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "SET STATEMENT max_statement_time=? FOR SELECT * from objects LIMIT 1", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test db.QueryRow
+	logger.lastQuery = ""
+
+	db.QueryRow("SELECT * from objects LIMIT 1")
+
+	if !strings.HasPrefix(logger.lastQuery, "SET STATEMENT max_statement_time=") ||
+		!strings.HasSuffix(logger.lastQuery, " FOR SELECT * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "SET STATEMENT max_statement_time=? FOR SELECT * from objects LIMIT 1", logger.lastQuery)
 	}
 }
 
@@ -958,6 +1004,9 @@ func TestWithMySql57Deadline(t *testing.T) {
 		t.Fatalf("Expected db.GetContext.Deadline() to return %v, got %v", later, dbDeadline)
 	}
 
+	// Test tx.Query
+	logger.lastQuery = ""
+
 	tx, err := db.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -976,6 +1025,48 @@ func TestWithMySql57Deadline(t *testing.T) {
 	err = tx.Commit()
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// Test db.Query
+	logger.lastQuery = ""
+
+	db.Query("SELECT * from objects")
+	if !strings.HasPrefix(logger.lastQuery, "SELECT /*+ MAX_EXECUTION_TIME(") ||
+		!strings.HasSuffix(logger.lastQuery, ") */ * from objects") {
+		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) */ * from objects", logger.lastQuery)
+	}
+
+	// Test tx.QueryRow
+	logger.lastQuery = ""
+
+	tx, err = db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txDeadline, _ := tx.Context().Deadline(); txDeadline != later {
+		t.Fatalf("Expected tx.GetContext.Deadline() to return %v, got %v", later, txDeadline)
+	}
+
+	tx.QueryRow("SELECT * from objects LIMIT 1")
+
+	if !strings.HasPrefix(logger.lastQuery, "SELECT /*+ MAX_EXECUTION_TIME(") ||
+		!strings.HasSuffix(logger.lastQuery, ") */ * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) */ * from objects LIMIT 1", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test db.QueryRow
+	logger.lastQuery = ""
+
+	db.QueryRow("SELECT * from objects LIMIT 1")
+
+	if !strings.HasPrefix(logger.lastQuery, "SELECT /*+ MAX_EXECUTION_TIME(") ||
+		!strings.HasSuffix(logger.lastQuery, ") */ * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) */ * from objects LIMIT 1", logger.lastQuery)
 	}
 }
 

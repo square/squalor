@@ -704,9 +704,8 @@ func (db *DB) Query(q interface{}, args ...interface{}) (*Rows, error) {
 	return db.QueryContext(db.Context(), q, args...)
 }
 
-// QueryContext is the context version of Query.
-func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
-	start := time.Now()
+// Rewrite the query to include a deadline if one is present in the context.
+func rewriteQuery(ctx context.Context, db *DB, start time.Time, q interface{}) (interface{}, error) {
 	if ctx != nil {
 		if deadline, ok := ctx.Deadline(); ok && !deadline.IsZero() {
 			// Set an execution deadline for the query.
@@ -722,8 +721,18 @@ func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface
 			}
 		}
 	}
+	return q, nil
+}
 
-	serializer, err := db.getSerializer(q)
+// QueryContext is the context version of Query.
+func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
+	start := time.Now()
+	rewrittenQuery, err := rewriteQuery(ctx, db, start, q)
+	if err != nil {
+		return nil, err
+	}
+
+	serializer, err := db.getSerializer(rewrittenQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -752,7 +761,13 @@ func (db *DB) QueryRow(q interface{}, args ...interface{}) *Row {
 
 // QueryRowContext is the context version of QueryRow.
 func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) *Row {
-	serializer, err := db.getSerializer(q)
+	start := time.Now()
+	rewrittenQuery, err := rewriteQuery(ctx, db, start, q)
+	if err != nil {
+		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
+	}
+
+	serializer, err := db.getSerializer(rewrittenQuery)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
@@ -761,7 +776,6 @@ func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
 
-	start := time.Now()
 	argsConverted := argsConvert(args)
 	rows, err := query(ctx, db.DB, querystr, argsConverted...)
 	db.logQuery(ctx, serializer, db, start, err)
@@ -989,23 +1003,12 @@ func (tx *Tx) Query(q interface{}, args ...interface{}) (*Rows, error) {
 // QueryContext is the context version of Query.
 func (tx *Tx) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
 	start := time.Now()
-	if ctx != nil {
-		if deadline, ok := tx.Context().Deadline(); ok && !deadline.IsZero() {
-			// Set an execution deadline for the query.
-			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
-			if remainingMillis > 0 {
-				var err error
-				q, err = tx.DB.deadlineQueryRewriter(tx.DB, q, remainingMillis)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				return nil, context.DeadlineExceeded
-			}
-		}
+	rewrittenQuery, err := rewriteQuery(ctx, tx.DB, start, q)
+	if err != nil {
+		return nil, err
 	}
 
-	serializer, err := tx.DB.getSerializer(q)
+	serializer, err := tx.DB.getSerializer(rewrittenQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -1034,7 +1037,13 @@ func (tx *Tx) QueryRow(q interface{}, args ...interface{}) *Row {
 
 // QueryRowContext is the context version of QueryRow.
 func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) *Row {
-	serializer, err := tx.DB.getSerializer(q)
+	start := time.Now()
+	rewrittenQuery, err := rewriteQuery(ctx, tx.DB, start, q)
+	if err != nil {
+		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
+	}
+
+	serializer, err := tx.DB.getSerializer(rewrittenQuery)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
@@ -1043,7 +1052,6 @@ func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
 
-	start := time.Now()
 	argsConverted := argsConvert(args)
 	rows, err := query(ctx, tx.Tx, querystr, argsConverted...)
 	tx.DB.logQuery(ctx, serializer, tx, start, err)
