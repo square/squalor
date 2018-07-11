@@ -27,11 +27,14 @@ type DeleteBuilder struct {
 	Delete
 }
 
-func makeDeleteBuilder(table string) *DeleteBuilder {
-	b := &DeleteBuilder{}
-	b.Delete.Table = &TableName{
-		Name: table,
+func makeDeleteBuilder(table abstractTable, tables ...*Table) *DeleteBuilder {
+	var tableNames TableNames
+	for _, table := range tables {
+		tableNames = append(tableNames, &TableName{Name: table.Name})
 	}
+	b := &DeleteBuilder{}
+	b.Delete.Table = table
+	b.Delete.TableNames = tableNames
 	return b
 }
 
@@ -71,6 +74,28 @@ type abstractTable interface {
 	columnCount(name string) int
 }
 
+// The Selectable interface is a type for structs that provide the Select function.
+// The types that implement this interface are Table and JoinBuilder.
+// This interface is not used by Squalor itself, it is provided so that users can create functions
+// that can accept either of these two types.
+type Selectable interface {
+	Select(exprs ...interface{}) *SelectBuilder
+}
+
+var _ Selectable = &JoinBuilder{}
+var _ Selectable = &Table{}
+
+// The Deletable interface is a type for structs that provide the Delete function.
+// The types that implement this interface are Table and JoinBuilder.
+// This interface is not used by Squalor itself, it is provided so that users can create functions
+// that can accept either of these two types.
+type Deletable interface {
+	Delete(table ...*Table) *DeleteBuilder
+}
+
+var _ Deletable = &JoinBuilder{}
+var _ Deletable = &Table{}
+
 // JoinBuilder aids the construction of JOIN expressions, providing
 // methods for specifying the join condition.
 type JoinBuilder struct {
@@ -92,6 +117,11 @@ func makeJoinBuilder(join string, left, right *Table) *JoinBuilder {
 // Select creates a SELECT statement builder.
 func (b *JoinBuilder) Select(exprs ...interface{}) *SelectBuilder {
 	return makeSelectBuilder(b, exprs...)
+}
+
+// Delete creates a DELETE statement builder.
+func (b *JoinBuilder) Delete(tables ...*Table) *DeleteBuilder {
+	return makeDeleteBuilder(b, tables...)
 }
 
 // On sets an ON join condition for the expression, replacing any

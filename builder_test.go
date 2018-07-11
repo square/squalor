@@ -27,12 +27,20 @@ func TestDeleteBuilder(t *testing.T) {
 	users := NewTable("users", User{})
 	foo := users.C("foo")
 
+	type Object struct {
+		Foo, Baz string
+	}
+	objects := NewTable("objects", &Object{})
+	baz := objects.C("baz")
+
 	testCases := []struct {
 		builder  *DeleteBuilder
 		expected string
 	}{
 		{users.Delete(),
 			"DELETE FROM `users`"},
+		{users.Delete(users),
+			"DELETE `users` FROM `users`"},
 		// Where
 		{users.Delete().Where(foo.Eq("bar")),
 			"DELETE FROM `users` WHERE `users`.`foo` = 'bar'"},
@@ -44,6 +52,28 @@ func TestDeleteBuilder(t *testing.T) {
 		// Limit
 		{users.Delete().Limit(10),
 			"DELETE FROM `users` LIMIT 10"},
+		// Joins
+		{users.InnerJoin(objects).Delete(),
+			"DELETE FROM `users` INNER JOIN `objects`"},
+		{users.InnerJoin(objects).Delete(users),
+			"DELETE `users` FROM `users` INNER JOIN `objects`"},
+		{users.InnerJoin(objects).Delete(users, objects),
+			"DELETE `users`, `objects` FROM `users` INNER JOIN `objects`"},
+		{users.InnerJoin(objects).On(foo.Eq(baz)).Delete(users),
+			"DELETE `users` FROM `users` INNER JOIN `objects` ON `users`.`foo` = `objects`.`baz`"},
+		{users.InnerJoin(objects).On(foo.Eq(objects.C("foo"))).Delete(users),
+			"DELETE `users` FROM `users` INNER JOIN `objects` ON `users`.`foo` = `objects`.`foo`"},
+		{users.InnerJoin(objects).Using(foo).Delete(users),
+			"DELETE `users` FROM `users` INNER JOIN `objects` USING (`foo`)"},
+		{users.InnerJoin(objects).Using("foo").Delete(users),
+			"DELETE `users` FROM `users` INNER JOIN `objects` USING (`foo`)"},
+		{users.LeftJoin(objects).Delete(users),
+			"DELETE `users` FROM `users` LEFT JOIN `objects`"},
+		{users.RightJoin(objects).Delete(users),
+			"DELETE `users` FROM `users` RIGHT JOIN `objects`"},
+		// Subquery
+		{users.Delete().Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
+			"DELETE FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
 	}
 
 	for _, c := range testCases {
@@ -430,6 +460,7 @@ func TestSelectBuilder(t *testing.T) {
 			"SELECT * FROM `users` LEFT JOIN `objects`"},
 		{users.RightJoin(objects).Select("*"),
 			"SELECT * FROM `users` RIGHT JOIN `objects`"},
+		// Subquery
 		{users.Select("*").Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
 			"SELECT * FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
 	}

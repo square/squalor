@@ -249,8 +249,8 @@ func (t *Table) RightJoin(other *Table) *JoinBuilder {
 }
 
 // Delete creates a DELETE statement builder.
-func (t *Table) Delete() *DeleteBuilder {
-	return makeDeleteBuilder(t.Name)
+func (t *Table) Delete(tables ...*Table) *DeleteBuilder {
+	return makeDeleteBuilder(t, tables...)
 }
 
 // Insert creates an INSERT statement builder.

@@ -306,6 +306,7 @@ func (Values) insertRows()  {}
 type Update struct {
 	Comments Comments
 	Table    *TableName
+	Tables   []*Table
 	Exprs    UpdateExprs
 	Where    *Where
 	OrderBy  OrderBy
@@ -345,10 +346,15 @@ func (node *Update) Serialize(w Writer) error {
 // Delete represents a DELETE statement.
 type Delete struct {
 	Comments Comments
-	Table    *TableName
-	Where    *Where
-	OrderBy  OrderBy
-	Limit    *Limit
+	// Table is either a TableName or a JoinBuilder
+	Table abstractTable
+	// TableNames is a list of tables to perform the delete on. This is only necessary when doing
+	// joins, because you may not want to delete from all the tables involved in the join.
+	// In deletes without joins, this may be empty or the table being deleted from.
+	TableNames TableNames
+	Where      *Where
+	OrderBy    OrderBy
+	Limit      *Limit
 }
 
 var (
@@ -363,10 +369,18 @@ func (node *Delete) Serialize(w Writer) error {
 	if err := node.Comments.Serialize(w); err != nil {
 		return err
 	}
+	if len(node.TableNames) != 0 {
+		if err := node.TableNames.Serialize(w); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, " "); err != nil {
+			return err
+		}
+	}
 	if _, err := w.Write(astDeleteFrom); err != nil {
 		return err
 	}
-	if err := node.Table.Serialize(w); err != nil {
+	if err := node.Table.tableExpr().Serialize(w); err != nil {
 		return err
 	}
 	if err := node.Where.Serialize(w); err != nil {
@@ -389,6 +403,23 @@ func (node Comments) Serialize(w Writer) error {
 		if _, err := w.Write(astSpace); err != nil {
 			return nil
 		}
+	}
+	return nil
+}
+
+// TableNames represents several table names. It is used in deletes that have joins.
+type TableNames []*TableName
+
+func (node TableNames) Serialize(w Writer) error {
+	var prefix []byte
+	for _, n := range node {
+		if _, err := w.Write(prefix); err != nil {
+			return err
+		}
+		if err := n.Serialize(w); err != nil {
+			return err
+		}
+		prefix = astCommaSpace
 	}
 	return nil
 }
