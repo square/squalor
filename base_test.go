@@ -29,11 +29,11 @@ import (
 
 func makeTestDSN(dbName string) string {
 	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "root")
+	fmt.Fprint(&buf, "root")
 	if password := os.Getenv("MYSQL_PASSWORD"); password != "" {
 		fmt.Fprintf(&buf, ":%s", password)
 	}
-	fmt.Fprintf(&buf, "@")
+	fmt.Fprint(&buf, "@")
 	host := os.Getenv("MYSQL_HOST")
 	if host == "" {
 		host = "localhost"

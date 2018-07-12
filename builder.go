@@ -491,7 +491,7 @@ func (b *SelectBuilder) Limit(count interface{}) *SelectBuilder {
 // set the offset before setting the limit.
 func (b *SelectBuilder) Offset(offset interface{}) *SelectBuilder {
 	if b.Select.Limit == nil {
-		panic(fmt.Errorf("offset without limit"))
+		panic("offset without limit")
 	}
 	b.Select.Limit.Offset = makeValExpr(offset)
 	return b

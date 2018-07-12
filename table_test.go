@@ -80,7 +80,7 @@ func TestValidateModel(t *testing.T) {
 
 	// BaseModel doesn't map all of the table's columns.
 	if err := table.ValidateModel(BaseModel{}); err == nil {
-		t.Fatalf("Expected failure, but found success")
+		t.Fatal("Expected failure, but found success")
 	}
 
 	type BadModel struct {
@@ -90,6 +90,6 @@ func TestValidateModel(t *testing.T) {
 
 	// BadModel maps columns that are not in the table.
 	if err := table.ValidateModel(BadModel{}); err == nil {
-		t.Fatalf("Expected failure, but found success")
+		t.Fatal("Expected failure, but found success")
 	}
 }

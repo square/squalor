@@ -102,7 +102,7 @@ func TestDeleteBuilderErrors(t *testing.T) {
 
 	for _, c := range testCases {
 		if _, err := Serialize(c.builder); err == nil {
-			t.Errorf("Expected error, but found success")
+			t.Error("Expected error, but found success")
 		} else if c.expectedError != err.Error() {
 			t.Errorf("Expected\n%s\nbut got\n%s", c.expectedError, err)
 		}
@@ -171,7 +171,7 @@ func TestInsertBuilderErrors(t *testing.T) {
 
 	for _, c := range testCases {
 		if _, err := Serialize(c.builder); err == nil {
-			t.Errorf("Expected error, but found success")
+			t.Error("Expected error, but found success")
 		} else if c.expectedError != err.Error() {
 			t.Errorf("Expected\n%s\nbut got\n%s", c.expectedError, err)
 		}
@@ -222,7 +222,7 @@ func TestReplaceBuilderErrors(t *testing.T) {
 
 	for _, c := range testCases {
 		if _, err := Serialize(c.builder); err == nil {
-			t.Errorf("Expected error, but found success")
+			t.Error("Expected error, but found success")
 		} else if c.expectedError != err.Error() {
 			t.Errorf("Expected\n%s\nbut got\n%s", c.expectedError, err)
 		}
@@ -280,7 +280,7 @@ func TestUpdateBuilderErrors(t *testing.T) {
 
 	for _, c := range testCases {
 		if _, err := Serialize(c.builder); err == nil {
-			t.Errorf("Expected error, but found success")
+			t.Error("Expected error, but found success")
 		} else if c.expectedError != err.Error() {
 			t.Errorf("Expected\n%s\nbut got\n%s", c.expectedError, err)
 		}
@@ -575,7 +575,7 @@ func TestSelectBuilderErrors(t *testing.T) {
 
 	for _, c := range testCases {
 		if _, err := Serialize(c.builder); err == nil {
-			t.Errorf("Expected error, but found success")
+			t.Error("Expected error, but found success")
 		} else if c.expectedError != err.Error() {
 			t.Errorf("Expected\n%s\nbut got\n%s", c.expectedError, err)
 		}
