@@ -38,14 +38,14 @@ type StandardLogger struct {
 }
 
 func (l *StandardLogger) Log(ctx context.Context, query Serializer, exec Executor, executionTime time.Duration, err error) {
-	querystr, serializeErr := Serialize(query)
+	queryStr, serializeErr := Serialize(query)
 	if serializeErr != nil {
 		return
 	}
 
 	if err != nil {
-		l.Printf("[%v] %s - `%s` - %s\n", exec, executionTime, querystr, err)
+		l.Printf("[%v] %s - `%s` - %s\n", exec, executionTime, queryStr, err)
 	} else {
-		l.Printf("[%v] %s - `%s`\n", exec, executionTime, querystr)
+		l.Printf("[%v] %s - `%s`\n", exec, executionTime, queryStr)
 	}
 }

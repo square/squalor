@@ -152,7 +152,7 @@ func TestMapping(t *testing.T) {
 	}
 
 	if _, ok := m["ignored"]; ok {
-		t.Errorf("Expected to ignore `Ignored` field")
+		t.Error("Expected to ignore `Ignored` field")
 	}
 }
 

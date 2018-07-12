@@ -134,7 +134,7 @@ func (m fieldMap) getMappedColumns(columns []*Column, ignoreUnmappedCols, ignore
 	}
 	if !ignoreMissingCols && len(mapped) != len(m) {
 		var notMapped []string
-		for name, _ := range m {
+		for name := range m {
 			if !mapped[name] {
 				notMapped = append(notMapped, name)
 			}
