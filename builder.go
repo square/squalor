@@ -203,11 +203,11 @@ type InsertBuilder struct {
 	table *Table
 }
 
-func makeInsertBuilder(table *Table, cols ...interface{}) *InsertBuilder {
+func makeInsertBuilder(table *Table, kind string, cols ...interface{}) *InsertBuilder {
 	b := &InsertBuilder{
 		table: table,
 	}
-	b.Insert.Kind = "INSERT"
+	b.Insert.Kind = kind
 	b.Insert.Table = &TableName{
 		Name: table.Name,
 	}

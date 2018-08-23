@@ -47,6 +47,7 @@ type Executor interface {
 	Exec(query interface{}, args ...interface{}) (sql.Result, error)
 	Get(dest interface{}, keys ...interface{}) error
 	Insert(list ...interface{}) error
+	InsertIgnore(list ...interface{}) error
 	Query(query interface{}, args ...interface{}) (*Rows, error)
 	QueryRow(query interface{}, args ...interface{}) *Row
 	Replace(list ...interface{}) error
@@ -59,6 +60,7 @@ type Executor interface {
 	ExecContext(ctx context.Context, query interface{}, args ...interface{}) (sql.Result, error)
 	GetContext(ctx context.Context, dest interface{}, keys ...interface{}) error
 	InsertContext(ctx context.Context, list ...interface{}) error
+	InsertIgnoreContext(ctx context.Context, list ...interface{}) error
 	QueryContext(ctx context.Context, query interface{}, args ...interface{}) (*Rows, error)
 	QueryRowContext(ctx context.Context, query interface{}, args ...interface{}) *Row
 	ReplaceContext(ctx context.Context, list ...interface{}) error
@@ -136,7 +138,7 @@ type insertPlan struct {
 	hooks          hooks
 }
 
-func makeInsertPlan(m *Model, replace bool) insertPlan {
+func makeInsertPlan(m *Model, replace bool, insertIgnore bool) insertPlan {
 	p := insertPlan{}
 	var columns []interface{}
 	for _, col := range m.mappedColumns {
@@ -161,6 +163,9 @@ func makeInsertPlan(m *Model, replace bool) insertPlan {
 	if replace {
 		p.replaceBuilder = m.Replace(columns...)
 		p.hooks = replaceHooks{}
+	} else if insertIgnore {
+		p.insertBuilder = m.InsertIgnore(columns...)
+		p.hooks = insertHooks{}
 	} else {
 		p.insertBuilder = m.Insert(columns...)
 		p.hooks = insertHooks{}
@@ -170,7 +175,7 @@ func makeInsertPlan(m *Model, replace bool) insertPlan {
 }
 
 func makeUpsertPlan(m *Model) insertPlan {
-	p := makeInsertPlan(m, false)
+	p := makeInsertPlan(m, false, false)
 	// We're not able to process auto-increment columns on upsert. Don't
 	// even try.
 	p.autoIncr = nil
@@ -259,12 +264,13 @@ type Model struct {
 	// The incrementor for the version field, if any.
 	optlockInc func(reflect.Value)
 	// The precomputed query plans.
-	delete  deletePlan
-	get     getPlan
-	insert  insertPlan
-	replace insertPlan
-	update  updatePlan
-	upsert  insertPlan
+	delete       deletePlan
+	get          getPlan
+	insert       insertPlan
+	insertIgnore insertPlan
+	replace      insertPlan
+	update       updatePlan
+	upsert       insertPlan
 }
 
 func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
@@ -287,8 +293,9 @@ func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
 	}
 	m.delete = makeDeletePlan(m)
 	m.get = makeGetPlan(m)
-	m.insert = makeInsertPlan(m, false)
-	m.replace = makeInsertPlan(m, true)
+	m.insert = makeInsertPlan(m, false, false)
+	m.insertIgnore = makeInsertPlan(m, false, true)
+	m.replace = makeInsertPlan(m, true, false)
 	m.update = makeUpdatePlan(m)
 	m.upsert = makeUpsertPlan(m)
 	return m, nil
@@ -318,6 +325,10 @@ func getColumnNames(columns []*Column) []string {
 
 func getInsert(m *Model) insertPlan {
 	return m.insert
+}
+
+func getInsertIgnore(m *Model) insertPlan {
+	return m.insertIgnore
 }
 
 func getReplace(m *Model) insertPlan {
@@ -696,6 +707,25 @@ func (db *DB) InsertContext(ctx context.Context, list ...interface{}) error {
 	return insertObjects(ctx, db, db, getInsert, list)
 }
 
+// InsertIgnore runs a batched SQL INSERT IGNORE statement, grouping the objects by
+// the model type of the list elements. List elements must be pointers
+// to structs.
+//
+// An object bound to a table with an auto-increment column will have
+// its corresponding field filled in with the generated value if a
+// pointer to the object was passed in "list".
+//
+// Returns an error if an element in the list has not been registered
+// with BindModel.
+func (db *DB) InsertIgnore(list ...interface{}) error {
+	return insertObjects(db.Context(), db, db, getInsertIgnore, list)
+}
+
+// InsertIgnoreContext is the context version of InsertIgnore.
+func (db *DB) InsertIgnoreContext(ctx context.Context, list ...interface{}) error {
+	return insertObjects(ctx, db, db, getInsertIgnore, list)
+}
+
 // Query executes a query that returns rows, typically a SELECT. The
 // args are for any placeholder parameters in the query. This is a
 // small wrapper around sql.DB.Query that returns a *squalor.Rows
@@ -990,6 +1020,25 @@ func (tx *Tx) Insert(list ...interface{}) error {
 // InsertContext is the context version of Insert.
 func (tx *Tx) InsertContext(ctx context.Context, list ...interface{}) error {
 	return insertObjects(ctx, tx.DB, tx, getInsert, list)
+}
+
+// InsertIgnore runs a batched SQL INSERT IGNORE statement, grouping the objects by
+// the model type of the list elements. List elements must be pointers
+// to structs.
+//
+// An object bound to a table with an auto-increment column will have
+// its corresponding field filled in with the generated value if a
+// pointer to the object was passed in "list".
+//
+// Returns an error if an element in the list has not been registered
+// with BindModel.
+func (tx *Tx) InsertIgnore(list ...interface{}) error {
+	return insertObjects(tx.Context(), tx.DB, tx, getInsertIgnore, list)
+}
+
+// InsertIgnoreContext is the context version of InsertIgnore.
+func (tx *Tx) InsertIgnoreContext(ctx context.Context, list ...interface{}) error {
+	return insertObjects(ctx, tx.DB, tx, getInsertIgnore, list)
 }
 
 // Query executes a query that returns rows, typically a SELECT. The
