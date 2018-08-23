@@ -294,7 +294,12 @@ func (t *Table) Delete(tables ...*Table) *DeleteBuilder {
 
 // Insert creates an INSERT statement builder.
 func (t *Table) Insert(cols ...interface{}) *InsertBuilder {
-	return makeInsertBuilder(t, cols...)
+	return makeInsertBuilder(t, "INSERT", cols...)
+}
+
+// Insert creates an INSERT statement builder.
+func (t *Table) InsertIgnore(cols ...interface{}) *InsertBuilder {
+	return makeInsertBuilder(t, "INSERT IGNORE", cols...)
 }
 
 // Replace creates a REPLACE statement builder.

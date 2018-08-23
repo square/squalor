@@ -138,6 +138,25 @@ func TestInsertBuilder(t *testing.T) {
 			"INSERT INTO `users` (`foo`) VALUES ('bar') ON DUPLICATE KEY UPDATE `users`.`bar` = VALUES(`users`.`bar`)"},
 		{users.Insert("foo").Add("bar").OnDupKeyUpdateColumn(users.C("bar")),
 			"INSERT INTO `users` (`foo`) VALUES ('bar') ON DUPLICATE KEY UPDATE `users`.`bar` = VALUES(`users`.`bar`)"},
+
+		{users.InsertIgnore(foo).Add("bar"),
+			"INSERT IGNORE INTO `users` (`foo`) VALUES ('bar')"},
+		{users.InsertIgnore(foo).Add(nil),
+			"INSERT IGNORE INTO `users` (`foo`) VALUES (NULL)"},
+		{users.InsertIgnore(foo).Add([]byte(nil)),
+			"INSERT IGNORE INTO `users` (`foo`) VALUES (NULL)"},
+		{users.InsertIgnore(foo).Add([]byte{}),
+			"INSERT IGNORE INTO `users` (`foo`) VALUES (X'')"},
+		{users.InsertIgnore(foo).Add("bar").Add("qux"),
+			"INSERT IGNORE INTO `users` (`foo`) VALUES ('bar'), ('qux')"},
+		{users.InsertIgnore("foo", "bar").Add("qux", 2),
+			"INSERT IGNORE INTO `users` (`foo`, `bar`) VALUES ('qux', 2)"},
+		{users.InsertIgnore("foo").Add("bar").OnDupKeyUpdate("bar", 2),
+			"INSERT IGNORE INTO `users` (`foo`) VALUES ('bar') ON DUPLICATE KEY UPDATE `users`.`bar` = 2"},
+		{users.InsertIgnore("foo").Add("bar").OnDupKeyUpdateColumn("bar"),
+			"INSERT IGNORE INTO `users` (`foo`) VALUES ('bar') ON DUPLICATE KEY UPDATE `users`.`bar` = VALUES(`users`.`bar`)"},
+		{users.InsertIgnore("foo").Add("bar").OnDupKeyUpdateColumn(users.C("bar")),
+			"INSERT IGNORE INTO `users` (`foo`) VALUES ('bar') ON DUPLICATE KEY UPDATE `users`.`bar` = VALUES(`users`.`bar`)"},
 	}
 
 	for _, c := range testCases {
@@ -166,6 +185,15 @@ func TestInsertBuilderErrors(t *testing.T) {
 		{users.Insert("foo").Add("bar").OnDupKeyUpdateColumn("bar"),
 			"invalid update column: bar"},
 		{users.Insert("foo").Add("bar").OnDupKeyUpdateColumn(4),
+			"invalid update column: 4"},
+
+		{users.InsertIgnore("bar").Add("bar"),
+			"invalid insert column: bar"},
+		{users.InsertIgnore("foo").Add("bar").OnDupKeyUpdate("bar", 2),
+			"invalid update column: bar"},
+		{users.InsertIgnore("foo").Add("bar").OnDupKeyUpdateColumn("bar"),
+			"invalid update column: bar"},
+		{users.InsertIgnore("foo").Add("bar").OnDupKeyUpdateColumn(4),
 			"invalid update column: 4"},
 	}
 
