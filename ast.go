@@ -908,18 +908,20 @@ type ComparisonExpr struct {
 
 // ComparisonExpr.Operator
 const (
-	astEQ      = " = "
-	astLT      = " < "
-	astGT      = " > "
-	astLE      = " <= "
-	astGE      = " >= "
-	astNE      = " != "
-	astNSE     = " <=> "
-	astIn      = " IN "
-	astNot     = " NOT "
-	astNotIn   = " NOT IN "
-	astLike    = " LIKE "
-	astNotLike = " NOT LIKE "
+	astEQ        = " = "
+	astLT        = " < "
+	astGT        = " > "
+	astLE        = " <= "
+	astGE        = " >= "
+	astNE        = " != "
+	astNSE       = " <=> "
+	astIn        = " IN "
+	astNot       = " NOT "
+	astNotIn     = " NOT IN "
+	astLike      = " LIKE "
+	astNotLike   = " NOT LIKE "
+	astRegExp    = " REGEXP "
+	astNotRegExp = " NOT REGEXP "
 )
 
 func (node *ComparisonExpr) Serialize(w Writer) error {

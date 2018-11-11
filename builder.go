@@ -667,6 +667,16 @@ func (b ValExprBuilder) NotLike(val interface{}) BoolExprBuilder {
 	return b.makeComparisonExpr(astNotLike, makeValExpr(val))
 }
 
+// RegExp creates a REGEXP expression.
+func (b ValExprBuilder) RegExp(val interface{}) BoolExprBuilder {
+	return b.makeComparisonExpr(astRegExp, makeValExpr(val))
+}
+
+// NotRegExp creates a NOT REGEXP expression.
+func (b ValExprBuilder) NotRegExp(val interface{}) BoolExprBuilder {
+	return b.makeComparisonExpr(astNotRegExp, makeValExpr(val))
+}
+
 func (b ValExprBuilder) makeRangeCond(
 	op string, from interface{}, to interface{}) BoolExprBuilder {
 	return BoolExprBuilder{
