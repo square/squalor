@@ -26,7 +26,24 @@ import (
 	"sync"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"golang.org/x/net/context"
+)
+
+type operationName string
+
+const (
+	opDelete       operationName = "delete"
+	opExec         operationName = "exec"
+	opGet          operationName = "get"
+	opInsert       operationName = "insert"
+	opInsertIgnore operationName = "insertignore"
+	opQuery        operationName = "query"
+	opQueryRow     operationName = "queryrow"
+	opReplace      operationName = "replace"
+	opSelect       operationName = "select"
+	opUpdate       operationName = "update"
+	opUpsert       operationName = "upsert"
 )
 
 // ErrMixedAutoIncrIDs is returned when attempting to insert multiple
@@ -368,6 +385,11 @@ type DB struct {
 	// NOTE: Unmapped columns in primary keys are still not allowed.
 	IgnoreUnmappedCols bool
 	Logger             QueryLogger
+	// Determines whether opentracing is enabled.
+	// If enabled, it will create a new span for each squalor call.
+	//
+	// The default is false, tracers should be registered by the callers.
+	OpentracingEnabled bool
 	context            context.Context
 	mu                 *sync.RWMutex // pointer, so copies in WithContext() behave properly.
 	models             map[reflect.Type]*Model
@@ -433,6 +455,14 @@ func SetQueryLogger(logger QueryLogger) DBOption {
 	}
 }
 
+// When passed as an option to NewDB(), determines whether to create a new opentracing span for squalor call.
+func SetOpentracingEnabled(enabled bool) DBOption {
+	return func(db *DB) error {
+		db.OpentracingEnabled = enabled
+		return nil
+	}
+}
+
 // NewDB creates a new DB from an sql.DB. Zero or more DBOptions may be passed in and will
 // be processed in order.
 func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
@@ -442,6 +472,7 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 		IgnoreUnmappedCols:    true,
 		IgnoreMissingCols:     false,
 		Logger:                nil,
+		OpentracingEnabled:    false,
 		context:               context.Background(),
 		deadlineQueryRewriter: noopDeadlineQueryRewriter,
 		models:                map[reflect.Type]*Model{},
@@ -656,6 +687,8 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 
 // ExecContext is the context version of Exec.
 func (db *DB) ExecContext(ctx context.Context, query interface{}, args ...interface{}) (sql.Result, error) {
+	ctx, finishTrace := db.addTracerToContext(ctx, opExec)
+	defer finishTrace()
 	serializer, err := db.getSerializer(query)
 	if err != nil {
 		return nil, err
@@ -699,12 +732,12 @@ func (db *DB) GetContext(ctx context.Context, dest interface{}, keys ...interfac
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (db *DB) Insert(list ...interface{}) error {
-	return insertObjects(db.Context(), db, db, getInsert, list)
+	return insertObjects(db.Context(), db, db, getInsert, list, opInsert)
 }
 
 // InsertContext is the context version of Insert.
 func (db *DB) InsertContext(ctx context.Context, list ...interface{}) error {
-	return insertObjects(ctx, db, db, getInsert, list)
+	return insertObjects(ctx, db, db, getInsert, list, opInsert)
 }
 
 // InsertIgnore runs a batched SQL INSERT IGNORE statement, grouping the objects by
@@ -718,12 +751,12 @@ func (db *DB) InsertContext(ctx context.Context, list ...interface{}) error {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (db *DB) InsertIgnore(list ...interface{}) error {
-	return insertObjects(db.Context(), db, db, getInsertIgnore, list)
+	return insertObjects(db.Context(), db, db, getInsertIgnore, list, opInsertIgnore)
 }
 
 // InsertIgnoreContext is the context version of InsertIgnore.
 func (db *DB) InsertIgnoreContext(ctx context.Context, list ...interface{}) error {
-	return insertObjects(ctx, db, db, getInsertIgnore, list)
+	return insertObjects(ctx, db, db, getInsertIgnore, list, opInsertIgnore)
 }
 
 // Query executes a query that returns rows, typically a SELECT. The
@@ -756,6 +789,8 @@ func rewriteQuery(ctx context.Context, db *DB, start time.Time, q interface{}) (
 
 // QueryContext is the context version of Query.
 func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
+	ctx, finishTrace := db.addTracerToContext(ctx, opQuery)
+	defer finishTrace()
 	start := time.Now()
 	rewrittenQuery, err := rewriteQuery(ctx, db, start, q)
 	if err != nil {
@@ -791,6 +826,8 @@ func (db *DB) QueryRow(q interface{}, args ...interface{}) *Row {
 
 // QueryRowContext is the context version of QueryRow.
 func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) *Row {
+	ctx, finishTrace := db.addTracerToContext(ctx, opQueryRow)
+	defer finishTrace()
 	start := time.Now()
 	rewrittenQuery, err := rewriteQuery(ctx, db, start, q)
 	if err != nil {
@@ -828,12 +865,12 @@ func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (db *DB) Replace(list ...interface{}) error {
-	return insertObjects(db.Context(), db, db, getReplace, list)
+	return insertObjects(db.Context(), db, db, getReplace, list, opReplace)
 }
 
 // ReplaceContext is the context version of Replace.
 func (db *DB) ReplaceContext(ctx context.Context, list ...interface{}) error {
-	return insertObjects(ctx, db, db, getReplace, list)
+	return insertObjects(ctx, db, db, getReplace, list, opReplace)
 }
 
 // Select runs an arbitrary SQL query, unmarshalling the matching rows
@@ -849,12 +886,12 @@ func (db *DB) ReplaceContext(ctx context.Context, list ...interface{}) error {
 // *[]*struct{} is allowed.  It is mildly more efficient to use
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (db *DB) Select(dest interface{}, q interface{}, args ...interface{}) error {
-	return selectObjects(db.Context(), db, dest, q, args)
+	return selectObjects(db.Context(), db, db, dest, q, args)
 }
 
 // SelectContext is the context version of Select.
 func (db *DB) SelectContext(ctx context.Context, dest interface{}, q interface{}, args ...interface{}) error {
-	return selectObjects(ctx, db, dest, q, args)
+	return selectObjects(ctx, db, db, dest, q, args)
 }
 
 // Update runs a SQL UPDATE statement for each element in list. List
@@ -879,12 +916,12 @@ func (db *DB) UpdateContext(ctx context.Context, list ...interface{}) (int64, er
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (db *DB) Upsert(list ...interface{}) error {
-	return insertObjects(db.Context(), db, db, getUpsert, list)
+	return insertObjects(db.Context(), db, db, getUpsert, list, opUpsert)
 }
 
 // UpsertContext is the context version of Upsert.
 func (db *DB) UpsertContext(ctx context.Context, list ...interface{}) error {
-	return insertObjects(ctx, db, db, getUpsert, list)
+	return insertObjects(ctx, db, db, getUpsert, list, opUpsert)
 }
 
 // Begin begins a transaction and returns a *squalor.Tx instead of a
@@ -954,6 +991,8 @@ func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 
 // ExecContext executes a query using the provided context.
 func (tx *Tx) ExecContext(ctx context.Context, query interface{}, args ...interface{}) (sql.Result, error) {
+	ctx, finishTrace := tx.DB.addTracerToContext(ctx, opExec)
+	defer finishTrace()
 	serializer, err := tx.DB.getSerializer(query)
 	if err != nil {
 		return nil, err
@@ -1014,12 +1053,12 @@ func (tx *Tx) GetContext(ctx context.Context, dest interface{}, keys ...interfac
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) Insert(list ...interface{}) error {
-	return insertObjects(tx.Context(), tx.DB, tx, getInsert, list)
+	return insertObjects(tx.Context(), tx.DB, tx, getInsert, list, opInsert)
 }
 
 // InsertContext is the context version of Insert.
 func (tx *Tx) InsertContext(ctx context.Context, list ...interface{}) error {
-	return insertObjects(ctx, tx.DB, tx, getInsert, list)
+	return insertObjects(ctx, tx.DB, tx, getInsert, list, opInsert)
 }
 
 // InsertIgnore runs a batched SQL INSERT IGNORE statement, grouping the objects by
@@ -1033,12 +1072,12 @@ func (tx *Tx) InsertContext(ctx context.Context, list ...interface{}) error {
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) InsertIgnore(list ...interface{}) error {
-	return insertObjects(tx.Context(), tx.DB, tx, getInsertIgnore, list)
+	return insertObjects(tx.Context(), tx.DB, tx, getInsertIgnore, list, opInsertIgnore)
 }
 
 // InsertIgnoreContext is the context version of InsertIgnore.
 func (tx *Tx) InsertIgnoreContext(ctx context.Context, list ...interface{}) error {
-	return insertObjects(ctx, tx.DB, tx, getInsertIgnore, list)
+	return insertObjects(ctx, tx.DB, tx, getInsertIgnore, list, opInsertIgnore)
 }
 
 // Query executes a query that returns rows, typically a SELECT. The
@@ -1051,6 +1090,8 @@ func (tx *Tx) Query(q interface{}, args ...interface{}) (*Rows, error) {
 
 // QueryContext is the context version of Query.
 func (tx *Tx) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
+	ctx, finishTrace := tx.DB.addTracerToContext(ctx, opQuery)
+	defer finishTrace()
 	start := time.Now()
 	rewrittenQuery, err := rewriteQuery(ctx, tx.DB, start, q)
 	if err != nil {
@@ -1086,6 +1127,8 @@ func (tx *Tx) QueryRow(q interface{}, args ...interface{}) *Row {
 
 // QueryRowContext is the context version of QueryRow.
 func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) *Row {
+	ctx, finishTrace := tx.DB.addTracerToContext(ctx, opQueryRow)
+	defer finishTrace()
 	start := time.Now()
 	rewrittenQuery, err := rewriteQuery(ctx, tx.DB, start, q)
 	if err != nil {
@@ -1123,12 +1166,12 @@ func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) Replace(list ...interface{}) error {
-	return insertObjects(tx.Context(), tx.DB, tx, getReplace, list)
+	return insertObjects(tx.Context(), tx.DB, tx, getReplace, list, opReplace)
 }
 
 // ReplaceContext is the context version of Replace.
 func (tx *Tx) ReplaceContext(ctx context.Context, list ...interface{}) error {
-	return insertObjects(ctx, tx.DB, tx, getReplace, list)
+	return insertObjects(ctx, tx.DB, tx, getReplace, list, opReplace)
 }
 
 // Select runs an arbitrary SQL query, unmarshalling the matching rows
@@ -1144,12 +1187,12 @@ func (tx *Tx) ReplaceContext(ctx context.Context, list ...interface{}) error {
 // *[]*struct{} is allowed.  It is mildly more efficient to use
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (tx *Tx) Select(dest interface{}, q interface{}, args ...interface{}) error {
-	return selectObjects(tx.Context(), tx, dest, q, args)
+	return selectObjects(tx.Context(), tx.DB, tx, dest, q, args)
 }
 
 // SelectContext is the context version of Select.
 func (tx *Tx) SelectContext(ctx context.Context, dest interface{}, q interface{}, args ...interface{}) error {
-	return selectObjects(ctx, tx, dest, q, args)
+	return selectObjects(ctx, tx.DB, tx, dest, q, args)
 }
 
 // Update runs a SQL UPDATE statement for each element in list. List
@@ -1174,12 +1217,12 @@ func (tx *Tx) UpdateContext(ctx context.Context, list ...interface{}) (int64, er
 // Returns an error if an element in the list has not been registered
 // with BindModel.
 func (tx *Tx) Upsert(list ...interface{}) error {
-	return insertObjects(tx.Context(), tx.DB, tx, getUpsert, list)
+	return insertObjects(tx.Context(), tx.DB, tx, getUpsert, list, opUpsert)
 }
 
 // UpsertContext is the context version of Upsert.
 func (tx *Tx) UpsertContext(ctx context.Context, list ...interface{}) error {
-	return insertObjects(ctx, tx.DB, tx, getUpsert, list)
+	return insertObjects(ctx, tx.DB, tx, getUpsert, list, opUpsert)
 }
 
 // setTyp holds a locus to set a value into, after it has been converted to
@@ -1573,6 +1616,8 @@ func deleteModel(ctx context.Context, model *Model, exec Executor, list []interf
 }
 
 func deleteObjects(ctx context.Context, db *DB, exec Executor, list []interface{}) (int64, error) {
+	ctx, finishTrace := db.addTracerToContext(ctx, opDelete)
+	defer finishTrace()
 	objs, err := groupObjects(db, list)
 	if err != nil {
 		return -1, err
@@ -1591,6 +1636,8 @@ func deleteObjects(ctx context.Context, db *DB, exec Executor, list []interface{
 }
 
 func getObject(ctx context.Context, db *DB, exec Executor, obj interface{}, keys []interface{}) error {
+	ctx, finishTrace := db.addTracerToContext(ctx, opGet)
+	defer finishTrace()
 	objT := reflect.TypeOf(obj)
 	if objT.Kind() != reflect.Ptr {
 		return fmt.Errorf("obj must be a pointer: %T", obj)
@@ -1736,7 +1783,9 @@ func insertModel(ctx context.Context, model *Model, exec Executor, getPlan func(
 	return nil
 }
 
-func insertObjects(ctx context.Context, db *DB, exec Executor, getPlan func(m *Model) insertPlan, list []interface{}) error {
+func insertObjects(ctx context.Context, db *DB, exec Executor, getPlan func(m *Model) insertPlan, list []interface{}, name operationName) error {
+	ctx, finishTrace := db.addTracerToContext(ctx, name)
+	defer finishTrace()
 	objs, err := groupObjects(db, list)
 	if err != nil {
 		return err
@@ -1750,7 +1799,9 @@ func insertObjects(ctx context.Context, db *DB, exec Executor, getPlan func(m *M
 	return nil
 }
 
-func selectObjects(ctx context.Context, exec Executor, dest interface{}, query interface{}, args []interface{}) error {
+func selectObjects(ctx context.Context, db *DB, exec Executor, dest interface{}, query interface{}, args []interface{}) error {
+	ctx, finishTrace := db.addTracerToContext(ctx, opSelect)
+	defer finishTrace()
 	sliceValue := reflect.ValueOf(dest)
 	if sliceValue.Kind() != reflect.Ptr {
 		return fmt.Errorf("dest must be a pointer to a slice: %T", dest)
@@ -1853,6 +1904,8 @@ func updateModel(ctx context.Context, model *Model, exec Executor, list []interf
 }
 
 func updateObjects(ctx context.Context, db *DB, exec Executor, list []interface{}) (int64, error) {
+	ctx, finishTrace := db.addTracerToContext(ctx, opUpdate)
+	defer finishTrace()
 	objs, err := groupObjects(db, list)
 	if err != nil {
 		return -1, err
@@ -1867,4 +1920,23 @@ func updateObjects(ctx context.Context, db *DB, exec Executor, list []interface{
 		count += nrows
 	}
 	return count, nil
+}
+
+// addTracerToContext returns a new ctx with tracer attached to it and a method to finish the trace
+//
+// finishing the trace would finish the traced span, so code should call finish as soon as the
+// operations complete:
+//
+// 	func execWithTracer(ctx context.Context) {
+// 		ctx, finishTracer := addTracerToContext(ctx, "exec")
+// 		defer finishTracer()
+// 		return exec(ctx)
+// 	}
+func (db *DB) addTracerToContext(ctx context.Context, name operationName) (tracedCtx context.Context, finishTrace func()) {
+	if db.OpentracingEnabled {
+		span, tracedCtx := opentracing.StartSpanFromContext(ctx, string(name))
+		return tracedCtx, span.Finish
+	}
+
+	return ctx, func() {}
 }
