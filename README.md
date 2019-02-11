@@ -80,8 +80,11 @@ http://godoc.org/github.com/square/squalor
 
 ## Limitations
 
-While squalor uses the database/sql package, the SQL it utilizes is
+- While squalor uses the database/sql package, the SQL it utilizes is
 MySQL specific (e.g. REPLACE, INSERT ON DUPLICATE KEY UPDATE, etc).
+- squalor cannot handle non-UTF-8 strings.  This is because it handle its
+own prepared statements, and in order to prevent multiple-byte injection
+attacks.
 
 ## History
 
