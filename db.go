@@ -364,6 +364,8 @@ func (ss stringSerializer) Serialize(w Writer) error {
 	return err
 }
 
+type deadlineQueryRewriterFunc func(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error)
+
 // DB is a wrapper around a sql.DB which also implements the
 // squalor.Executor interface. DB is safe for concurrent use by
 // multiple goroutines.
@@ -396,14 +398,16 @@ type DB struct {
 	mappings           map[reflect.Type]fieldMap
 
 	// Function to add a deadline to a query.
-	deadlineQueryRewriter func(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error)
+	deadlineQueryRewriter deadlineQueryRewriterFunc
 }
 
 type DBOption func(*DB) error
 
 // When passed as an option to NewDB(), disables query deadlines.
 func QueryDeadlineNone(db *DB) error {
+	db.mu.Lock()
 	db.deadlineQueryRewriter = noopDeadlineQueryRewriter
+	db.mu.Unlock()
 	return nil
 }
 
@@ -411,7 +415,9 @@ func QueryDeadlineNone(db *DB) error {
 // Query deadlines only affect SELECT queries run via the Executor.Query function.
 // It us up to the underlying database engine to enforce the deadline.
 func QueryDeadlinePercona56(db *DB) error {
+	db.mu.Lock()
 	db.deadlineQueryRewriter = perconaDeadlineQueryRewriter
+	db.mu.Unlock()
 	return nil
 }
 
@@ -419,8 +425,18 @@ func QueryDeadlinePercona56(db *DB) error {
 // Query deadlines only affect SELECT queries run via the Executor.Query function.
 // It us up to the underlying database engine to enforce the deadline.
 func QueryDeadlineMySQL57(db *DB) error {
+	db.mu.Lock()
 	db.deadlineQueryRewriter = mySql57DeadlineQueryRewriter
+	db.mu.Unlock()
 	return nil
+}
+
+// Retrieve the current query deadline rewriter function.
+func queryDeadlineRewriter(db *DB) deadlineQueryRewriterFunc {
+       db.mu.Lock()
+       rewriter := db.deadlineQueryRewriter
+       db.mu.Unlock()
+       return rewriter
 }
 
 // When passed as an option to NewDB(), determines whether to allow string queries.
@@ -775,7 +791,7 @@ func rewriteQuery(ctx context.Context, db *DB, start time.Time, q interface{}) (
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
 				var err error
-				q, err = db.deadlineQueryRewriter(db, q, remainingMillis)
+				q, err = deadlineQueryRewriter(db)(db, q, remainingMillis)
 				if err != nil {
 					return nil, err
 				}
