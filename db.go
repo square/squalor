@@ -433,9 +433,9 @@ func QueryDeadlineMySQL57(db *DB) error {
 
 // Retrieve the current query deadline rewriter function.
 func queryDeadlineRewriter(db *DB) deadlineQueryRewriterFunc {
-       db.mu.Lock()
+       db.mu.RLock()
        rewriter := db.deadlineQueryRewriter
-       db.mu.Unlock()
+       db.mu.RUnlock()
        return rewriter
 }
 
