@@ -36,6 +36,37 @@ func TestLoadTable(t *testing.T) {
 	fmt.Printf("%s\n", table)
 }
 
+func TestLoadTableNameInjection(t *testing.T) {
+	db := makeTestDB(t, objectsDDL)
+	defer db.Close()
+
+	// Ensure the table name is quoted to avoid possible SQL injection.
+	table, err := LoadTable(db.DB, "objects WHERE false")
+	if table != nil {
+		t.Fatalf("Expected nil table returned from injection attempt, got %v", table)
+	}
+	expectedError := "Error 1146: Table 'squalor_test.objects where false' doesn't exist"
+	if err == nil {
+		t.Fatalf("Expected error %q from injection attempt, got nil", expectedError)
+	}
+	if err.Error() != expectedError {
+		t.Fatalf("Expected error %q from injection attempt, got %q", expectedError, err.Error())
+	}
+
+	// Ensure the table name is quoted to avoid possible SQL injection.
+	table, err = LoadTable(db.DB, "foo`;bar")
+	if table != nil {
+		t.Fatalf("Expected nil table returned from injection attempt, got %v", table)
+	}
+	expectedError = "Error 1146: Table 'squalor_test.foo`;bar' doesn't exist"
+	if err == nil {
+		t.Fatalf("Expected error %q from injection attempt, got nil", expectedError)
+	}
+	if err.Error() != expectedError {
+		t.Fatalf("Expected error %q from injection attempt, got %q", expectedError, err.Error())
+	}
+}
+
 func TestGetKey(t *testing.T) {
 	table := mustLoadTable(t, "objects")
 

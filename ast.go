@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Instructions for creating new types: If a type needs to satisfy an
@@ -594,7 +595,7 @@ type SimpleTableExpr interface {
 func (*TableName) simpleTableExpr() {}
 func (*Subquery) simpleTableExpr()  {}
 
-// TableName represents a table  name.
+// TableName represents a table name.
 type TableName struct {
 	Name, Qualifier string
 }
@@ -1113,8 +1114,10 @@ type ColName struct {
 }
 
 var (
-	astBackquote = []byte("`")
-	astPeriod    = []byte(".")
+	astBackquoteStr       = "`"
+	astDoubleBackquoteStr = "``"
+	astBackquote          = []byte(astBackquoteStr)
+	astPeriod             = []byte(".")
 )
 
 func (node *ColName) Serialize(w Writer) error {
@@ -1129,12 +1132,13 @@ func (node *ColName) Serialize(w Writer) error {
 	return quoteName(w, node.Name)
 }
 
-// note: quoteName does not escape s. quoteName is indirectly
+// note: quoteName escapes any backquote (`) characters in s. quoteName is indirectly
 // called by builder.go, which checks that column/table names exist.
 func quoteName(w io.Writer, s string) error {
 	if _, err := w.Write(astBackquote); err != nil {
 		return err
 	}
+	s = strings.ReplaceAll(s, astBackquoteStr, astDoubleBackquoteStr)
 	if _, err := io.WriteString(w, s); err != nil {
 		return err
 	}
