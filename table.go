@@ -355,10 +355,15 @@ func (t *Table) aliasOrName() string {
 	return t.Name
 }
 
+// Enclose a name in backquotes and escape any internal backquotes.
+func quoteNameStr(s string) string {
+	return astBackquoteStr + strings.ReplaceAll(s, astBackquoteStr, astDoubleBackquoteStr) + astBackquoteStr
+}
+
 // loadColumns loads a table's columns from a database. MySQL
 // specific.
 func (t *Table) loadColumns(db *sql.DB) error {
-	rows, err := db.Query("SHOW FULL COLUMNS FROM " + t.Name)
+	rows, err := db.Query("SHOW FULL COLUMNS FROM " + quoteNameStr(t.Name))
 	if err != nil {
 		return err
 	}
@@ -450,7 +455,7 @@ func (t *Table) columnCount(name string) int {
 // loadKeys loads a table's keys (indexes) from a database. MySQL
 // specific.
 func (t *Table) loadKeys(db *sql.DB) error {
-	rows, err := db.Query("SHOW INDEX FROM " + t.Name)
+	rows, err := db.Query("SHOW INDEX FROM " + quoteNameStr(t.Name))
 	if err != nil {
 		return err
 	}
