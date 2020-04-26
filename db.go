@@ -512,11 +512,11 @@ func mySql57DeadlineQueryRewriter(db *DB, query interface{}, millis int64) (quer
 	if err != nil {
 		return nil, err
 	}
-	if strings.HasPrefix(querystr, "SELECT ") {
-		return fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ %s", millis, querystr[7:]), nil
-	} else {
-		return querystr, nil
+
+	if strings.HasPrefix(querystr, "SELECT ") || strings.HasPrefix(querystr, "(SELECT ") {
+		querystr = strings.Replace(querystr, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", millis), 1)
 	}
+	return querystr, nil
 }
 
 func (db *DB) logQuery(ctx context.Context, query Serializer, exec Executor, start time.Time, err error) {
