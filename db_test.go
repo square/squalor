@@ -982,6 +982,16 @@ func TestWithPerconaDeadline(t *testing.T) {
 		!strings.HasSuffix(logger.lastQuery, " FOR SELECT * from objects LIMIT 1") {
 		t.Fatalf("Expected %q, got %q", "SET STATEMENT max_statement_time=? FOR SELECT * from objects LIMIT 1", logger.lastQuery)
 	}
+
+	// Test nested queries
+	logger.lastQuery = ""
+
+	db.QueryRow("(SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)")
+
+	if !strings.HasPrefix(logger.lastQuery, "SET STATEMENT max_statement_time=") ||
+		!strings.HasSuffix(logger.lastQuery, " (SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)") {
+		t.Fatalf("Expected %q, got %q", "SET STATEMENT max_statement_time=? FOR (SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)", logger.lastQuery)
+	}
 }
 
 func TestWithMySql57Deadline(t *testing.T) {
@@ -1067,6 +1077,16 @@ func TestWithMySql57Deadline(t *testing.T) {
 	if !strings.HasPrefix(logger.lastQuery, "SELECT /*+ MAX_EXECUTION_TIME(") ||
 		!strings.HasSuffix(logger.lastQuery, ") */ * from objects LIMIT 1") {
 		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) */ * from objects LIMIT 1", logger.lastQuery)
+	}
+
+	// Test nested queries
+	logger.lastQuery = ""
+
+	db.QueryRow("(SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)")
+
+	if !strings.HasPrefix(logger.lastQuery, "(SELECT /*+ MAX_EXECUTION_TIME(") ||
+		!strings.HasSuffix(logger.lastQuery, ") */ * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)") {
+		t.Fatalf("Expected %q, got %q", "(SELECT /*+ MAX_EXECUTION_TIME(?) */ FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)", logger.lastQuery)
 	}
 }
 
