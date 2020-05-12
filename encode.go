@@ -15,16 +15,24 @@ import (
 	"io"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
 
 var (
-	dontEscape  = byte(255)
-	nullstr     = []byte("NULL")
-	singleQuote = []byte("'")
-	backslash   = []byte("\\")
-	hexStart    = []byte("X'")
+	dontEscape   = byte(255)
+	nullstr      = []byte("NULL")
+	singleQuote  = []byte("'")
+	backslash    = []byte("\\")
+	hexStart     = []byte("X'")
+	space        = []byte(" ")
+	commentStart = "/*"
+	commentEnd   = "*/"
+	// The versions with spaces create more readable comments.
+	commentStartWithSpace = "/* "
+	commentEndWithSpace   = " */"
+	escapedCommentEnd     = "*\\/"
 	// encodeMap specifies how to escape binary data with '\'.
 	// Complies to http://dev.mysql.com/doc/refman/5.7/en/string-literals.html
 	encodeMap [256]byte
@@ -136,6 +144,41 @@ func encodeSQLString(w io.Writer, in string) error {
 		}
 	}
 	_, err := w.Write(singleQuote)
+	return err
+}
+
+// encodeSQLComment writes a string as a query comment.
+// If a comment is already properly formatted with C-style comments (/* */), then it will be left
+// alone, otherwise the string will be formatted into a C-style comment and anything which terminates
+// the comment prematurely will be escaped.
+func encodeSQLComment(w io.Writer, in string) error {
+	// Check if the string is already a C-style comment.
+	if strings.HasPrefix(in, commentStart) && strings.HasSuffix(in, commentEnd) && len(in) > 3 {
+		if _, err := io.WriteString(w, commentStart); err != nil {
+			return err
+		}
+		if err := escapeCommentContents(w, in[2:len(in)-2]); err != nil {
+			return err
+		}
+		_, err := io.WriteString(w, commentEnd)
+		return err
+	}
+
+	// Otherwise, form a C-style comment with the input string.
+	if _, err := io.WriteString(w, commentStartWithSpace); err != nil {
+		return err
+	}
+	if err := escapeCommentContents(w, in); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, commentEndWithSpace)
+	return err
+}
+
+// escapeCommentContents writes the contents of a C-style comment. It escapes any */ strings,
+// which would prematurely terminate the comment contents and lead to a syntax error.
+func escapeCommentContents(w io.Writer, in string) error {
+	_, err := io.WriteString(w, strings.ReplaceAll(in, string(commentEnd), escapedCommentEnd))
 	return err
 }
 

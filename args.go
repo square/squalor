@@ -15,6 +15,7 @@
 package squalor
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 )
@@ -70,6 +71,16 @@ var kindsToBaseType = map[reflect.Kind]reflect.Type{
 	reflect.String:  reflect.TypeOf(string("")),
 }
 
+type contextKey string
+
+func (c contextKey) String() string {
+	return "square/squalor context key " + string(c)
+}
+
+var (
+	ContextKeyComments = contextKey("comments")
+)
+
 func argsConvert(from []interface{}) []interface{} {
 	to := make([]interface{}, len(from))
 	for i, arg := range from {
@@ -110,4 +121,9 @@ func asKind(value reflect.Value) interface{} {
 	default:
 		panic(fmt.Sprintf("unmapped base kind %s", kind))
 	}
+}
+
+func comments(ctx context.Context) ([]string, bool) {
+	comment, ok := ctx.Value(ContextKeyComments).([]string)
+	return comment, ok
 }

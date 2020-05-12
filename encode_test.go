@@ -64,3 +64,58 @@ func TestDontEscape(t *testing.T) {
 		t.Errorf("Decode fail: %v", decodeMap[dontEscape])
 	}
 }
+
+func TestEncodeSQLComment(t *testing.T) {
+	testCases := []struct {
+		arg      string
+		expected string
+	}{
+		{"", "/*  */"},
+		{"/*/", "/* /*\\/ */"},
+		{"foo", "/* foo */"},
+		{"/* foo */", "/* foo */"},
+		{"/*foo*/", "/*foo*/"},
+		{"foo */", "/* foo *\\/ */"},
+		{"/* foo */ */", "/* foo *\\/ */"},
+		{"-- foo", "/* -- foo */"},
+		{"# foo", "/* # foo */"},
+		{"米派", "/* 米派 */"},
+	}
+	for _, c := range testCases {
+		var buf bytes.Buffer
+		if err := encodeSQLComment(&buf, c.arg); err != nil {
+			t.Error(err)
+			continue
+		}
+		encoded := buf.String()
+		if encoded != c.expected {
+			t.Errorf("Expected %q, but got %q", c.expected, encoded)
+		}
+	}
+}
+
+func TestEscapeCommentContents(t *testing.T) {
+	testCases := []struct {
+		arg      string
+		expected string
+	}{
+		{"", ""},
+		{"/*/", "/*\\/"},
+		{"foo", "foo"},
+		{"/* foo */", "/* foo *\\/"},
+		{"/*foo*/", "/*foo*\\/"},
+		{"*/ */ */", "*\\/ *\\/ *\\/"},
+		{"米派", "米派"},
+	}
+	for _, c := range testCases {
+		var buf bytes.Buffer
+		if err := escapeCommentContents(&buf, c.arg); err != nil {
+			t.Error(err)
+			continue
+		}
+		encoded := buf.String()
+		if encoded != c.expected {
+			t.Errorf("Expected %q, but got %q", c.expected, encoded)
+		}
+	}
+}
