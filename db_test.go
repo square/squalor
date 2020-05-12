@@ -19,7 +19,9 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"math/rand"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1124,6 +1126,250 @@ func TestWithoutDeadline(t *testing.T) {
 	err = tx.Commit()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWithContextInjectedComments(t *testing.T) {
+	logger := &TestLogger{t: t}
+	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", User{}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), "user_id", "123")
+	commentCtx := context.WithValue(ctx, ContextKeyComments, []string{"baz", "bar"})
+
+	logger.lastQuery = ""
+
+	// Insert
+	{
+		if err := db.InsertContext(commentCtx, &User{}); err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.HasPrefix(logger.lastQuery, "INSERT /* baz */ /* bar */ INTO `users`") {
+			t.Fatalf("Expected %q, got %q", "INSERT /* baz */ /* bar */ INTO `users`", logger.lastQuery)
+		}
+	}
+
+	// Insert Ignore
+	{
+		if err := db.InsertIgnoreContext(commentCtx, &User{}); err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.HasPrefix(logger.lastQuery, "INSERT IGNORE /* baz */ /* bar */ INTO `users`") {
+			t.Fatalf("Expected %q, got %q", "INSERT IGNORE /* baz */ /* bar */ INTO `users`", logger.lastQuery)
+		}
+	}
+
+	// Delete
+	{
+		user := &User{}
+		if err := db.InsertContext(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := db.DeleteContext(commentCtx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.HasPrefix(logger.lastQuery, "DELETE /* baz */ /* bar */ FROM `users`") {
+			t.Fatalf("Expected %q, got %q", "DELETE /* baz */ /* bar */ INTO `users`", logger.lastQuery)
+		}
+	}
+
+	// Get
+	{
+		user := &User{}
+		if err := db.InsertContext(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := db.GetContext(commentCtx, &User{}, user.ID); err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.HasPrefix(logger.lastQuery, "SELECT /* baz */ /* bar */ `users`.`id`") {
+			t.Fatalf("Expected %q, got %q", "SELECT /* baz */ /* bar */ `users`.`id`", logger.lastQuery)
+		}
+	}
+
+	// Update
+	{
+		user := &User{}
+		if err := db.InsertContext(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		user = &User{Name: strconv.Itoa(rand.Int())}
+		if _, err := db.UpdateContext(commentCtx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.HasPrefix(logger.lastQuery, "UPDATE /* baz */ /* bar */ `users`") {
+			t.Fatalf("Expected %q, got %q", "UPDATE /* baz */ /* bar */ `users`", logger.lastQuery)
+		}
+	}
+
+	// Upsert
+	{
+		user := &User{}
+		if err := db.InsertContext(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		user = &User{Name: strconv.Itoa(rand.Int())}
+		if err := db.UpsertContext(commentCtx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.HasPrefix(logger.lastQuery, "INSERT /* baz */ /* bar */ INTO `users`") {
+			t.Fatalf("Expected %q, got %q", "INSERT /* baz */ /* bar */ INTO `users`", logger.lastQuery)
+		}
+	}
+
+	// Replace
+	{
+		user := &User{}
+		if err := db.InsertContext(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		user = &User{Name: strconv.Itoa(rand.Int())}
+		if err := db.ReplaceContext(commentCtx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.HasPrefix(logger.lastQuery, "REPLACE /* baz */ /* bar */ INTO `users`") {
+			t.Fatalf("Expected %q, got %q", "REPLACE /* baz */ /* bar */ INTO `users`", logger.lastQuery)
+		}
+	}
+}
+
+func TestWithContextInjectedCommentsIgnored(t *testing.T) {
+	logger := &TestLogger{t: t}
+	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", User{}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), "user_id", "123")
+	comment := "baz"
+	commentCtx := context.WithValue(ctx, ContextKeyComments, []string{comment})
+
+	logger.lastQuery = ""
+
+	verifyNoComment := func(t *testing.T) {
+		t.Helper()
+		if strings.Contains(logger.lastQuery, comment) {
+			t.Fatalf("Expected %q to not contain %q", logger.lastQuery, comment)
+		}
+	}
+
+	// Select
+	{
+		user := &User{Name: strconv.Itoa(rand.Int())}
+		if err := db.InsertContext(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		var users []User
+		if err := db.SelectContext(commentCtx, &users, "SELECT * FROM users WHERE name = ?", user.Name); err != nil {
+			t.Fatal(err)
+		}
+
+		verifyNoComment(t)
+	}
+
+	// Exec
+	{
+		if _, err := db.ExecContext(commentCtx, "SELECT * FROM users WHERE name = ?", "foo"); err != nil {
+			t.Fatal(err)
+		}
+
+		verifyNoComment(t)
+	}
+
+	// Query
+	{
+		if _, err := db.QueryContext(commentCtx, "SELECT name FROM users WHERE name = ?", "foo"); err != nil {
+			t.Fatal(err)
+		}
+
+		verifyNoComment(t)
+	}
+
+	// Query Row
+	{
+		user := &User{Name: strconv.Itoa(rand.Int())}
+		if err := db.InsertContext(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		rowPtr := db.QueryRowContext(commentCtx, "SELECT name FROM users WHERE name = ?", user.Name)
+		if rowPtr == nil {
+			t.Fatal("there should be one row to read")
+		}
+		var name string
+		if err := rowPtr.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+
+		verifyNoComment(t)
+	}
+}
+
+// Tests potentially dangerous comment input to ensure safe handling
+func TestWithContextInjectedUnsafeComments(t *testing.T) {
+	logger := &TestLogger{t: t}
+	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", User{}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), "user_id", "123")
+
+	logger.lastQuery = ""
+
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"", "/*  */"},
+		{"/*/", "/* /*\\/ */"},
+		{"foo", "/* foo */"},
+		{"/* foo */", "/* foo */"},
+		{"/*foo*/", "/*foo*/"},
+		{"'; foo */", "/* '; foo *\\/ */"},
+		{"/* foo */ */", "/* foo *\\/ */"},
+		{"-- foo", "/* -- foo */"},
+		{"# foo", "/* # foo */"},
+		{"米派", "/* 米派 */"},
+	}
+	for _, c := range testCases {
+		commentCtx := context.WithValue(ctx, ContextKeyComments, []string{c.input})
+		user := &User{}
+		if err := db.InsertContext(commentCtx, user); err != nil {
+			t.Fatal(err)
+		}
+
+		if !strings.HasPrefix(logger.lastQuery, fmt.Sprintf("INSERT %s INTO `users`", c.expected)) {
+			t.Fatalf("Expected %q to contain %q", logger.lastQuery, c.expected)
+		}
+
+		// Make sure the insert succeeded as expected
+		foundUser := &User{}
+		if err := db.GetContext(commentCtx, foundUser, user.ID); err != nil {
+			t.Fatal(err)
+		}
+
+		if user.ID != foundUser.ID {
+			t.Fatalf("Expected to find user %d, got %d", user.ID, foundUser.ID)
+		}
 	}
 }
 

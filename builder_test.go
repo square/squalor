@@ -52,6 +52,9 @@ func TestDeleteBuilder(t *testing.T) {
 		// Limit
 		{users.Delete().Limit(10),
 			"DELETE FROM `users` LIMIT 10"},
+		// Comments
+		{users.Delete().Comments([]string{"quux", "quuz"}),
+			"DELETE /* quux */ /* quuz */ FROM `users`"},
 		// Joins
 		{users.InnerJoin(objects).Delete(),
 			"DELETE FROM `users` INNER JOIN `objects`"},
@@ -72,8 +75,8 @@ func TestDeleteBuilder(t *testing.T) {
 		{users.RightJoin(objects).Delete(users),
 			"DELETE `users` FROM `users` RIGHT JOIN `objects`"},
 		// Subquery
-		{users.Delete().Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
-			"DELETE FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
+		{users.Delete().Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Comments([]string{"corge"}).Where(objects.C("foo").Gt(10))})).Comments([]string{"grault"}),
+			"DELETE /* grault */ FROM `users` WHERE `users`.`foo` IN (SELECT /* corge */ `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
 	}
 
 	for _, c := range testCases {
@@ -132,6 +135,8 @@ func TestInsertBuilder(t *testing.T) {
 			"INSERT INTO `users` (`foo`) VALUES ('bar'), ('qux')"},
 		{users.Insert("foo", "bar").Add("qux", 2),
 			"INSERT INTO `users` (`foo`, `bar`) VALUES ('qux', 2)"},
+		{users.Insert(foo).Add("bar").Add("qux").Comments([]string{"quux", "quuz"}),
+			"INSERT /* quux */ /* quuz */ INTO `users` (`foo`) VALUES ('bar'), ('qux')"},
 		{users.Insert("foo").Add("bar").OnDupKeyUpdate("bar", 2),
 			"INSERT INTO `users` (`foo`) VALUES ('bar') ON DUPLICATE KEY UPDATE `users`.`bar` = 2"},
 		{users.Insert("foo").Add("bar").OnDupKeyUpdateColumn("bar"),
@@ -151,6 +156,8 @@ func TestInsertBuilder(t *testing.T) {
 			"INSERT IGNORE INTO `users` (`foo`) VALUES ('bar'), ('qux')"},
 		{users.InsertIgnore("foo", "bar").Add("qux", 2),
 			"INSERT IGNORE INTO `users` (`foo`, `bar`) VALUES ('qux', 2)"},
+		{users.InsertIgnore(foo).Add("bar").Add("qux").Comments([]string{"quux", "quuz"}),
+			"INSERT IGNORE /* quux */ /* quuz */ INTO `users` (`foo`) VALUES ('bar'), ('qux')"},
 		{users.InsertIgnore("foo").Add("bar").OnDupKeyUpdate("bar", 2),
 			"INSERT IGNORE INTO `users` (`foo`) VALUES ('bar') ON DUPLICATE KEY UPDATE `users`.`bar` = 2"},
 		{users.InsertIgnore("foo").Add("bar").OnDupKeyUpdateColumn("bar"),
@@ -223,6 +230,9 @@ func TestReplaceBuilder(t *testing.T) {
 			"REPLACE INTO `users` (`foo`) VALUES ('bar'), ('qux')"},
 		{users.Replace("foo", "bar").Add("qux", 2),
 			"REPLACE INTO `users` (`foo`, `bar`) VALUES ('qux', 2)"},
+		{users.Replace(foo).Add("bar").Add("qux").Comments([]string{"quux", "quuz"}),
+			"REPLACE /* quux */ /* quuz */ INTO `users` (`foo`) VALUES ('bar'), ('qux')"},
+
 	}
 
 	for _, c := range testCases {
@@ -279,6 +289,8 @@ func TestUpdateBuilder(t *testing.T) {
 			"UPDATE `users` SET `users`.`foo` = 'bar' ORDER BY `users`.`bar`"},
 		{users.Update().Set(foo, "bar").Limit(2),
 			"UPDATE `users` SET `users`.`foo` = 'bar' LIMIT 2"},
+		{users.Update().Set(foo, "bar").Comments([]string{"quux", "quuz"}),
+			"UPDATE /* quux */ /* quuz */ `users` SET `users`.`foo` = 'bar'"},
 	}
 
 	for _, c := range testCases {
@@ -469,6 +481,8 @@ func TestSelectBuilder(t *testing.T) {
 			"SELECT * FROM `users` FOR UPDATE"},
 		{users.Select("*").WithSharedLock(),
 			"SELECT * FROM `users` LOCK IN SHARE MODE"},
+		{users.Select("*").Comments([]string{"quux", "quuz"}),
+			"SELECT /* quux */ /* quuz */ * FROM `users`"},
 		// Joins
 		{users.InnerJoin(objects).Select("*"),
 			"SELECT * FROM `users` INNER JOIN `objects`"},

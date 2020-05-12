@@ -185,6 +185,9 @@ func (node *Select) Serialize(w Writer) error {
 	if _, err := w.Write(astSelect); err != nil {
 		return err
 	}
+	if err := node.Comments.Serialize(w); err != nil {
+		return err
+	}
 	if _, err := io.WriteString(w, node.Distinct); err != nil {
 		return err
 	}
@@ -398,7 +401,7 @@ type Comments []string
 
 func (node Comments) Serialize(w Writer) error {
 	for _, c := range node {
-		if _, err := io.WriteString(w, c); err != nil {
+		if err := encodeSQLComment(w, c); err != nil {
 			return nil
 		}
 		if _, err := w.Write(astSpace); err != nil {

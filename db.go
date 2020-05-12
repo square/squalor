@@ -1587,6 +1587,11 @@ func deleteModel(ctx context.Context, model *Model, exec Executor, list []interf
 				b.Where(andExpr.And(inExpr))
 			}
 
+			comments, ok := comments(ctx)
+			if ok {
+				b.Comments(comments)
+			}
+
 			res, err := exec.ExecContext(ctx, &b)
 			if err != nil {
 				return -1, err
@@ -1664,6 +1669,10 @@ func getObject(ctx context.Context, db *DB, exec Executor, obj interface{}, keys
 		}
 	}
 	q.Where(where)
+	comments, ok := comments(ctx)
+	if ok {
+		q.Comments(comments)
+	}
 
 	v := reflect.Indirect(reflect.ValueOf(obj))
 	dest := make([]interface{}, len(model.get.traversals))
@@ -1746,10 +1755,18 @@ func insertModel(ctx context.Context, model *Model, exec Executor, getPlan func(
 	if plan.replaceBuilder != nil {
 		b := *plan.replaceBuilder
 		b.AddRows(rows)
+		comments, ok := comments(ctx)
+		if ok {
+			b.Comments(comments)
+		}
 		serializer = &b
 	} else {
 		b := *plan.insertBuilder
 		b.AddRows(rows)
+		comments, ok := comments(ctx)
+		if ok {
+			b.Comments(comments)
+		}
 		serializer = &b
 	}
 
@@ -1879,6 +1896,11 @@ func updateModel(ctx context.Context, model *Model, exec Executor, list []interf
 			}
 		}
 		b.Where(where)
+
+		comments, ok := comments(ctx)
+		if ok {
+			b.Comments(comments)
+		}
 
 		res, err := exec.ExecContext(ctx, b)
 		if err != nil {

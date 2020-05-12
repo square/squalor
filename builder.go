@@ -65,6 +65,13 @@ func (b *DeleteBuilder) Where(expr BoolExpr) *DeleteBuilder {
 	return b
 }
 
+// Comments sets comments for the statement, replacing any
+// existing comments.
+func (b *DeleteBuilder) Comments(comments []string) *DeleteBuilder {
+	b.Delete.Comments = comments
+	return b
+}
+
 // abstractTable represents either a concrete table or the result of
 // joining two tables.
 type abstractTable interface {
@@ -255,6 +262,13 @@ func (b *InsertBuilder) AddRows(rows Values) *InsertBuilder {
 	return b
 }
 
+// Comments sets comments for the statement, replacing any
+// existing comments.
+func (b *InsertBuilder) Comments(comments []string) *InsertBuilder {
+	b.Insert.Comments = comments
+	return b
+}
+
 // OnDupKeyUpdate specifies an ON DUPLICATE KEY UPDATE expression to
 // be performed when a duplicate primary key is encountered during
 // insertion. The specified column must exist within the table being
@@ -332,6 +346,13 @@ func (b *ReplaceBuilder) AddRows(rows Values) *ReplaceBuilder {
 	} else {
 		b.Insert.Rows = append(b.Insert.Rows.(Values), rows...)
 	}
+	return b
+}
+
+// Comments sets comments for the statement, replacing any
+// existing comments.
+func (b *ReplaceBuilder) Comments(comments []string) *ReplaceBuilder {
+	b.Insert.Comments = comments
 	return b
 }
 
@@ -450,6 +471,13 @@ func (b *SelectBuilder) Where(expr BoolExpr) *SelectBuilder {
 	return b
 }
 
+// Comments sets comments for the statement, replacing any
+// existing comments.
+func (b *SelectBuilder) Comments(comments []string) *SelectBuilder {
+	b.Select.Comments = comments
+	return b
+}
+
 // Having sets the HAVING clause for the statement, replacing any
 // existing having clause.
 func (b *SelectBuilder) Having(expr BoolExpr) *SelectBuilder {
@@ -544,6 +572,13 @@ func (b *UpdateBuilder) Where(expr BoolExpr) *UpdateBuilder {
 		Type: astWhere,
 		Expr: unwrapBoolExpr(expr),
 	}
+	return b
+}
+
+// Comments sets comments for the statement, replacing any
+// existing comments.
+func (b *UpdateBuilder) Comments(comments []string) *UpdateBuilder {
+	b.Update.Comments = comments
 	return b
 }
 
