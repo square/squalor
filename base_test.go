@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"testing"
@@ -35,8 +34,6 @@ func makeTestDSN(dbName string) string {
 	}
 	fmt.Fprint(&buf, "@")
 	host := os.Getenv("MYSQL_HOST")
-
-	log.Println(host)
 
 	if host == "" {
 		host = "localhost"
