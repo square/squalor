@@ -18,10 +18,10 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"testing"
-
 	// Need to force vendor/mysql to be imported in order for the
 	// "mysql" sql driver to be registered.
 	_ "github.com/go-sql-driver/mysql"
@@ -35,6 +35,9 @@ func makeTestDSN(dbName string) string {
 	}
 	fmt.Fprint(&buf, "@")
 	host := os.Getenv("MYSQL_HOST")
+
+	log.Println(host)
+
 	if host == "" {
 		host = "localhost"
 	}
@@ -42,6 +45,7 @@ func makeTestDSN(dbName string) string {
 		host += ":3306"
 	}
 	fmt.Fprintf(&buf, "tcp(%s)/%s", host, dbName)
+
 	return buf.String()
 }
 

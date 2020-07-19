@@ -1040,16 +1040,16 @@ func TestTransactionBlock(t *testing.T) {
 
 	defer db.Close()
 
-	if err := db.Transaction(func (tx *Tx) error {
-		_, err := tx.Query("SELECT * from users")
+	if err := db.Transaction(func(tx *Tx) error {
+		_, err := tx.Exec("SELECT * from users")
 
 		return err
-	}); err != nil  {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := db.Transaction(func (tx *Tx) error {
-		_, err := tx.Query("SELECT * from objects")
+	if err := db.Transaction(func(tx *Tx) error {
+		_, err := tx.Exec("SELECT * from objects")
 
 		return err
 	}); err == nil || err.Error() != "Error 1146: Table 'squalor_test.objects' doesn't exist" {
