@@ -796,6 +796,31 @@ func TestCommitHooks_Normal(t *testing.T) {
 	}
 }
 
+func TestCommitHooks_NormalWithTransactionBlock(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	var pre, post int
+
+	if err := db.Transaction(func(tx *Tx) error {
+		tx.AddPreCommitHook(func(*Tx) error { pre += 7; return nil })
+		tx.AddPostCommitHook(func(error) { post += 11 })
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if pre != 7 {
+		t.Errorf("incorrect pre count: expecting %d, found %d", 7, pre)
+	}
+
+	if post != 11 {
+		t.Errorf("incorrect post count: expecting %d, found %d", 11, pre)
+	}
+}
+
 func TestCommitHooks_PreFails(t *testing.T) {
 	db := makeTestDB(t, usersDDL)
 	defer db.Close()
@@ -814,6 +839,20 @@ func TestCommitHooks_PreFails(t *testing.T) {
 		t.Fatal("expected Commit to fail, instead it succeeded")
 	}
 	if err.Error() != "oh no!" {
+		t.Fatalf("expected err to be 'oh no!', was: %s", err)
+	}
+}
+
+func TestCommitHooks_PreFailsWithTransactionBlock(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	if err := db.Transaction(func(tx *Tx) error {
+		tx.AddPreCommitHook(func(*Tx) error { return errors.New("oh no!") })
+
+		return nil
+	}); err == nil || err.Error() != "oh no!" {
 		t.Fatalf("expected err to be 'oh no!', was: %s", err)
 	}
 }
@@ -993,6 +1032,28 @@ func TestWithPerconaDeadline(t *testing.T) {
 	if !strings.HasPrefix(logger.lastQuery, "SET STATEMENT max_statement_time=") ||
 		!strings.HasSuffix(logger.lastQuery, " (SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)") {
 		t.Fatalf("Expected %q, got %q", "SET STATEMENT max_statement_time=? FOR (SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)", logger.lastQuery)
+	}
+}
+
+func TestTransactionBlock(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	if err := db.Transaction(func (tx *Tx) error {
+		_, err := tx.Query("SELECT * from users")
+
+		return err
+	}); err != nil  {
+		t.Fatal(err)
+	}
+
+	if err := db.Transaction(func (tx *Tx) error {
+		_, err := tx.Query("SELECT * from objects")
+
+		return err
+	}); err == nil || err.Error() != "Error 1146: Table 'squalor_test.objects' doesn't exist" {
+		t.Fatal("Expected a different error")
 	}
 }
 
