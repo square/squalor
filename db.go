@@ -944,8 +944,8 @@ func (db *DB) Transaction(fn func(tx *Tx) error) error {
 	}
 
 	if err := fn(tx); err != nil {
-		if err := tx.Rollback(); err != nil {
-			return err
+		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+			return combineErrors(err, rollbackErr)
 		}
 
 		return err

@@ -34,7 +34,6 @@ func makeTestDSN(dbName string) string {
 	}
 	fmt.Fprint(&buf, "@")
 	host := os.Getenv("MYSQL_HOST")
-
 	if host == "" {
 		host = "localhost"
 	}
@@ -42,7 +41,6 @@ func makeTestDSN(dbName string) string {
 		host += ":3306"
 	}
 	fmt.Fprintf(&buf, "tcp(%s)/%s", host, dbName)
-
 	return buf.String()
 }
 
