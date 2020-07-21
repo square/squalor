@@ -945,22 +945,17 @@ func (db *DB) Transaction(fn func(tx *Tx) error) (err error) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			switch value := r.(type) {
-			case string:
-				err = errors.New(value)
-			case error:
-				err = value
-			default:
-				err = errors.New("unknown panic")
+			err = recoveryToError(r)
+		}
+
+		if err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil{
+				err = combineErrors(err, rollbackErr)
 			}
 		}
 	}()
 
 	if err := fn(tx); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			err = combineErrors(err, rollbackErr)
-		}
-
 		return err
 	}
 

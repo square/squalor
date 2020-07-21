@@ -853,7 +853,7 @@ func TestCommitHooks_PreFailsWithTransactionBlock(t *testing.T) {
 
 		return nil
 	}); err == nil || err.Error() != "oh no!" {
-		t.Fatalf("expected err to be 'oh no!', was: %s", err)
+		t.Fatalf("expected err to be 'oh no!', was: %v", err)
 	}
 }
 
@@ -1079,11 +1079,11 @@ func TestTransactionBlockFailsOnDuplicatePrimaryKeyUpdate(t *testing.T) {
 
 	expectedError := "Error 1062: Duplicate entry '2' for key 'PRIMARY'"
 
-	if err := db.Transaction(func (tx *Tx) error {
+	if err := db.Transaction(func(tx *Tx) error {
 		_, err := db.Exec(fmt.Sprintf("UPDATE `users` SET id = %v WHERE `id` = %v", u2.ID, u1.ID))
 
 		return err
-	}); err == nil || err.Error() != expectedError{
+	}); err == nil || err.Error() != expectedError {
 		t.Fatalf("Expected %v error, got: %v", expectedError, err)
 	}
 }
@@ -1095,7 +1095,7 @@ func TestTransactionBlockRecoversFromPanic(t *testing.T) {
 
 	expectedError := "Something went wrong!"
 
-	if err := db.Transaction(func (tx *Tx) error {
+	if err := db.Transaction(func(tx *Tx) error {
 		panic("Something went wrong!")
 
 		return nil
