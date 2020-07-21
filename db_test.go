@@ -792,7 +792,7 @@ func TestCommitHooks_Normal(t *testing.T) {
 		t.Errorf("incorrect pre count: expecting %d, found %d", 7, pre)
 	}
 	if post != 11 {
-		t.Errorf("incorrect post count: expecting %d, found %d", 11, pre)
+		t.Errorf("incorrect post count: expecting %d, found %d", 11, post)
 	}
 }
 
@@ -817,7 +817,7 @@ func TestCommitHooks_NormalWithTransactionBlock(t *testing.T) {
 	}
 
 	if post != 11 {
-		t.Errorf("incorrect post count: expecting %d, found %d", 11, pre)
+		t.Errorf("incorrect post count: expecting %d, found %d", 11, post)
 	}
 }
 
@@ -848,12 +848,14 @@ func TestCommitHooks_PreFailsWithTransactionBlock(t *testing.T) {
 
 	defer db.Close()
 
+	expectedError := "oh no"
+
 	if err := db.Transaction(func(tx *Tx) error {
-		tx.AddPreCommitHook(func(*Tx) error { return errors.New("oh no!") })
+		tx.AddPreCommitHook(func(*Tx) error { return errors.New("oh no") })
 
 		return nil
-	}); err == nil || err.Error() != "oh no!" {
-		t.Fatalf("expected err to be 'oh no!', was: %v", err)
+	}); err == nil || err.Error() != expectedError {
+		t.Fatalf("Expected err to be '%v', go: %v", expectedError, err)
 	}
 }
 
