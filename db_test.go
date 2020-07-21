@@ -1066,9 +1066,7 @@ func TestTransactionBlockFailsOnDuplicatePrimaryKeyUpdate(t *testing.T) {
 
 	defer db.Close()
 
-	_, err := db.BindModel("users", &User{})
-
-	if err != nil {
+	if _, err := db.BindModel("users", &User{}); err != nil {
 		t.Fatal(err.Error())
 	}
 
@@ -1079,7 +1077,7 @@ func TestTransactionBlockFailsOnDuplicatePrimaryKeyUpdate(t *testing.T) {
 		t.Fatal(err.Error())
 	}
 
-	expectedError := "Error 1062: Duplicate entry '2' for key 'PRIMARY'"
+	expectedError := fmt.Sprintf("Error 1062: Duplicate entry '%v' for key 'PRIMARY'", u2.ID)
 
 	if err := db.Transaction(func(tx *Tx) error {
 		_, err := db.Exec(fmt.Sprintf("UPDATE `users` SET id = %v WHERE `id` = %v", u2.ID, u1.ID))
