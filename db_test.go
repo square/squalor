@@ -1055,7 +1055,52 @@ func TestTransactionBlock(t *testing.T) {
 
 		return err
 	}); err == nil || err.Error() != expectedError {
-		t.Fatal("Expected a different error")
+		t.Fatalf("Expected %v error, got: %v", expectedError, err)
+	}
+}
+
+func TestTransactionBlockFailsOnDuplicatePrimaryKeyUpdate(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	_, err := db.BindModel("users", &User{})
+
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	u1 := &User{Name: "Great Name", Age: 100}
+	u2 := &User{Name: "Other Great Name", Age: 102}
+
+	if err := db.Insert(u1, u2); err != nil {
+		t.Fatal(err.Error())
+	}
+
+	expectedError := "Error 1062: Duplicate entry '2' for key 'PRIMARY'"
+
+	if err := db.Transaction(func (tx *Tx) error {
+		_, err := db.Exec(fmt.Sprintf("UPDATE `users` SET id = %v WHERE `id` = %v", u2.ID, u1.ID))
+
+		return err
+	}); err == nil || err.Error() != expectedError{
+		t.Fatalf("Expected %v error, got: %v", expectedError, err)
+	}
+}
+
+func TestTransactionBlockRecoversFromPanic(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	expectedError := "Something went wrong!"
+
+	if err := db.Transaction(func (tx *Tx) error {
+		panic("Something went wrong!")
+
+		return nil
+	}); err == nil || err.Error() != expectedError {
+		t.Fatalf("Expected %v error, got: %v", expectedError, err)
 	}
 }
 

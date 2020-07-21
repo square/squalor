@@ -936,16 +936,29 @@ func (db *DB) Begin() (*Tx, error) {
 
 // Transaction begins a transaction as a block, if it errors it
 // will rollback and return an error, otherwise it will commit.
-func (db *DB) Transaction(fn func(tx *Tx) error) error {
+func (db *DB) Transaction(fn func(tx *Tx) error) (err error) {
 	tx, err := db.Begin()
 
 	if err != nil {
 		return err
 	}
 
+	defer func() {
+		if r := recover(); r != nil {
+			switch value := r.(type) {
+			case string:
+				err = errors.New(value)
+			case error:
+				err = value
+			default:
+				err = errors.New("unknown panic")
+			}
+		}
+	}()
+
 	if err := fn(tx); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			return combineErrors(err, rollbackErr)
+			err = combineErrors(err, rollbackErr)
 		}
 
 		return err

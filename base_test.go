@@ -21,6 +21,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+
 	// Need to force vendor/mysql to be imported in order for the
 	// "mysql" sql driver to be registered.
 	_ "github.com/go-sql-driver/mysql"
