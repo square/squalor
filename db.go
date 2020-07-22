@@ -938,7 +938,6 @@ func (db *DB) Begin() (*Tx, error) {
 // will rollback and return an error, otherwise it will commit.
 func (db *DB) Transaction(fn func(tx *Tx) error) (err error) {
 	tx, err := db.Begin()
-
 	if err != nil {
 		return err
 	}
