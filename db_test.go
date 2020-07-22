@@ -792,7 +792,32 @@ func TestCommitHooks_Normal(t *testing.T) {
 		t.Errorf("incorrect pre count: expecting %d, found %d", 7, pre)
 	}
 	if post != 11 {
-		t.Errorf("incorrect post count: expecting %d, found %d", 11, pre)
+		t.Errorf("incorrect post count: expecting %d, found %d", 11, post)
+	}
+}
+
+func TestCommitHooks_NormalWithTransactionBlock(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	var pre, post int
+
+	if err := db.Transaction(func(tx *Tx) error {
+		tx.AddPreCommitHook(func(*Tx) error { pre += 7; return nil })
+		tx.AddPostCommitHook(func(error) { post += 11 })
+
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if pre != 7 {
+		t.Errorf("incorrect pre count: expecting %d, found %d", 7, pre)
+	}
+
+	if post != 11 {
+		t.Errorf("incorrect post count: expecting %d, found %d", 11, post)
 	}
 }
 
@@ -815,6 +840,22 @@ func TestCommitHooks_PreFails(t *testing.T) {
 	}
 	if err.Error() != "oh no!" {
 		t.Fatalf("expected err to be 'oh no!', was: %s", err)
+	}
+}
+
+func TestCommitHooks_PreFailsWithTransactionBlock(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	expectedError := "oh no"
+
+	if err := db.Transaction(func(tx *Tx) error {
+		tx.AddPreCommitHook(func(*Tx) error { return errors.New("oh no") })
+
+		return nil
+	}); err == nil || err.Error() != expectedError {
+		t.Fatalf("Expected err to be '%v', go: %v", expectedError, err)
 	}
 }
 
@@ -993,6 +1034,73 @@ func TestWithPerconaDeadline(t *testing.T) {
 	if !strings.HasPrefix(logger.lastQuery, "SET STATEMENT max_statement_time=") ||
 		!strings.HasSuffix(logger.lastQuery, " (SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)") {
 		t.Fatalf("Expected %q, got %q", "SET STATEMENT max_statement_time=? FOR (SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)", logger.lastQuery)
+	}
+}
+
+func TestTransactionBlock(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	if err := db.Transaction(func(tx *Tx) error {
+		_, err := tx.Exec("SELECT * from users")
+
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedError := "Error 1146: Table 'squalor_test.objects' doesn't exist"
+
+	if err := db.Transaction(func(tx *Tx) error {
+		_, err := tx.Exec("SELECT * from objects")
+
+		return err
+	}); err == nil || err.Error() != expectedError {
+		t.Fatalf("Expected %v error, got: %v", expectedError, err)
+	}
+}
+
+func TestTransactionBlockFailsOnDuplicatePrimaryKeyUpdate(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	if _, err := db.BindModel("users", &User{}); err != nil {
+		t.Fatal(err.Error())
+	}
+
+	u1 := &User{Name: "Great Name", Age: 100}
+	u2 := &User{Name: "Other Great Name", Age: 102}
+
+	if err := db.Insert(u1, u2); err != nil {
+		t.Fatal(err.Error())
+	}
+
+	expectedError := fmt.Sprintf("Error 1062: Duplicate entry '%v' for key 'PRIMARY'", u2.ID)
+
+	if err := db.Transaction(func(tx *Tx) error {
+		_, err := db.Exec(fmt.Sprintf("UPDATE `users` SET id = %v WHERE `id` = %v", u2.ID, u1.ID))
+
+		return err
+	}); err == nil || err.Error() != expectedError {
+		t.Fatalf("Expected %v error, got: %v", expectedError, err)
+	}
+}
+
+func TestTransactionBlockRecoversFromPanic(t *testing.T) {
+	db := makeTestDB(t, usersDDL)
+
+	defer db.Close()
+
+	expectedError := "Something went wrong!"
+
+	if err := db.Transaction(func(tx *Tx) error {
+		panic("Something went wrong!")
+
+		return nil
+	}); err == nil || err.Error() != expectedError {
+		t.Fatalf("Expected %v error, got: %v", expectedError, err)
 	}
 }
 

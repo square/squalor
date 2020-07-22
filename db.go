@@ -934,6 +934,33 @@ func (db *DB) Begin() (*Tx, error) {
 	return &Tx{Tx: tx, DB: db}, nil
 }
 
+// Transaction begins a transaction as a block, if it errors it
+// will rollback and return an error, otherwise it will commit.
+func (db *DB) Transaction(fn func(tx *Tx) error) (err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = recoveryToError(r)
+		}
+
+		if err != nil {
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				err = combineErrors(err, rollbackErr)
+			}
+		}
+	}()
+
+	if err := fn(tx); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 // Tx is a wrapper around sql.Tx which also implements the
 // squalor.Executor interface.
 type Tx struct {

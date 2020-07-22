@@ -49,7 +49,11 @@ func TestLoadTableNameInjection(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected error %q from injection attempt, got nil", expectedError)
 	}
-	if err.Error() != expectedError {
+
+	// Use strings.ToLower in order to prevent error message discrepancies
+	// between running tests locally through integration_test.sh and the
+	// build running through circle.ci
+	if strings.ToLower(err.Error()) != strings.ToLower(expectedError) {
 		t.Fatalf("Expected error %q from injection attempt, got %q", expectedError, err.Error())
 	}
 
