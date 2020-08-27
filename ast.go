@@ -1340,7 +1340,13 @@ type When struct {
 }
 
 func (node *When) Serialize(w Writer) error {
+	if _, err := fmt.Fprint(w, "WHEN "); err != nil {
+		return err
+	}
 	if err := node.Cond.Serialize(w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(w, " THEN "); err != nil {
 		return err
 	}
 	return node.Val.Serialize(w)
