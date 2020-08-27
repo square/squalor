@@ -232,7 +232,6 @@ func TestReplaceBuilder(t *testing.T) {
 			"REPLACE INTO `users` (`foo`, `bar`) VALUES ('qux', 2)"},
 		{users.Replace(foo).Add("bar").Add("qux").Comments([]string{"quux", "quuz"}),
 			"REPLACE /* quux */ /* quuz */ INTO `users` (`foo`) VALUES ('bar'), ('qux')"},
-
 	}
 
 	for _, c := range testCases {
@@ -342,6 +341,15 @@ func TestSelectBuilder(t *testing.T) {
 	objects := NewTable("objects", &Object{})
 	baz := objects.C("baz")
 
+	caseClause := CaseExpr{
+		Expr: nil,
+		Whens: []*When{
+			&When{Cond: foo.Eq(1), Val: NumVal("0")},
+			&When{Cond: foo.Eq(2), Val: NumVal("1")},
+		},
+		Else: NumVal("2"),
+	}
+
 	testCases := []struct {
 		builder  *SelectBuilder
 		expected string
@@ -356,6 +364,8 @@ func TestSelectBuilder(t *testing.T) {
 			"SELECT `users`.* FROM `users`"},
 		{users.Select(foo.As("bar")),
 			"SELECT `users`.`foo` AS `bar` FROM `users`"},
+		{users.Select(&caseClause),
+			"SELECT CASE WHEN `users`.`foo` = 1 THEN 0 WHEN `users`.`foo` = 2 THEN 1 ELSE 2 END FROM `users`"},
 		// ComparisonExpr
 		{users.Select("*").Where(foo.Eq(1)),
 			"SELECT * FROM `users` WHERE `users`.`foo` = 1"},
@@ -438,6 +448,8 @@ func TestSelectBuilder(t *testing.T) {
 		// OrderBy
 		{users.Select(foo).Where(foo.Eq("bar")).OrderBy(foo, qux),
 			"SELECT `users`.`foo` FROM `users` WHERE `users`.`foo` = 'bar' ORDER BY `users`.`foo`, `users`.`qux`"},
+		{users.Select(foo).OrderBy(&caseClause),
+			"SELECT `users`.`foo` FROM `users` ORDER BY CASE WHEN `users`.`foo` = 1 THEN 0 WHEN `users`.`foo` = 2 THEN 1 ELSE 2 END"},
 		{users.Select(foo).Where(foo.Eq("bar")).OrderBy(qux.Descending()),
 			"SELECT `users`.`foo` FROM `users` WHERE `users`.`foo` = 'bar' ORDER BY `users`.`qux` DESC"},
 		{users.Select(foo).Where(foo.Eq("bar")).OrderBy(foo.Descending(), qux),
