@@ -19,14 +19,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/opentracing/opentracing-go"
-	"golang.org/x/net/context"
 	"io"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/opentracing/opentracing-go"
+	"golang.org/x/net/context"
 )
 
 type operationName string
@@ -368,7 +369,6 @@ func (ss stringSerializer) Serialize(w Writer) error {
 // multiple goroutines.
 type DB struct {
 	*sql.DB
-	ShouldRetry        bool
 	retryConfiguration RetryConfiguration
 	AllowStringQueries bool
 	// Whether to ignore missing columns referenced in models for the various DB
@@ -432,13 +432,6 @@ func AllowStringQueries(allow bool) DBOption {
 	}
 }
 
-func ShouldRetryQueries(shouldRetry bool) DBOption {
-	return func(db *DB) error {
-		db.ShouldRetry = shouldRetry
-		return nil
-	}
-}
-
 func SetRetryConfiguration(retryConfiguration RetryConfiguration) DBOption {
 	return func(db *DB) error {
 		db.retryConfiguration = retryConfiguration
@@ -484,8 +477,7 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 	newDB := &DB{
 		DB:                    db,
 		AllowStringQueries:    true,
-		ShouldRetry:           false,
-		retryConfiguration:    DefaultRetryConfiguration,
+		retryConfiguration:    NoOpRetryConfiguration,
 		IgnoreUnmappedCols:    true,
 		IgnoreMissingCols:     false,
 		Logger:                nil,
@@ -903,24 +895,16 @@ func (db *DB) ReplaceContext(ctx context.Context, list ...interface{}) error {
 // *[]*struct{} is allowed.  It is mildly more efficient to use
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (db *DB) Select(dest interface{}, q interface{}, args ...interface{}) error {
-	if db.ShouldRetry {
-		return Retry(db.retryConfiguration, func() error {
-			return selectObjects(db.Context(), db, db, dest, q, args)
-		})
-	} else {
+	return Retry(db.retryConfiguration, func() error {
 		return selectObjects(db.Context(), db, db, dest, q, args)
-	}
+	})
 }
 
 // SelectContext is the context version of Select.
 func (db *DB) SelectContext(ctx context.Context, dest interface{}, q interface{}, args ...interface{}) error {
-	if db.ShouldRetry {
-		return Retry(db.retryConfiguration, func() error {
-			return selectObjects(ctx, db, db, dest, q, args)
-		})
-	} else {
+	return Retry(db.retryConfiguration, func() error {
 		return selectObjects(ctx, db, db, dest, q, args)
-	}
+	})
 }
 
 // Update runs a SQL UPDATE statement for each element in list. List

@@ -14,10 +14,15 @@ type RetryConfiguration struct {
 	RetryableExceptions         map[error]bool
 }
 
-var DefaultRetryConfiguration = RetryConfiguration{
+var BasicRetryConfiguration = RetryConfiguration{
 	3,
 	300,
 	map[error]bool{conn.ErrReadOnly: true, conn.ErrConnLost: true, conn.ErrConnCannotConnect: true, conn.ErrTimeout: true, mysql.ErrInvalidConn: true}}
+
+var NoOpRetryConfiguration = RetryConfiguration{
+	0,
+	0,
+	map[error]bool{}}
 
 func Retry(retryConfig RetryConfiguration, fn func() error) error {
 
@@ -55,7 +60,6 @@ func IsRetryable(err error, retryableExceptions map[error]bool) bool {
 	}
 
 	return retryableExceptions[err]
-
 }
 
 func retriesError(retries int, err error) error {
