@@ -369,6 +369,7 @@ func (ss stringSerializer) Serialize(w Writer) error {
 // multiple goroutines.
 type DB struct {
 	*sql.DB
+	Retryable          Retryable
 	AllowStringQueries bool
 	// Whether to ignore missing columns referenced in models for the various DB
 	// function calls such as StructScan, Select, Insert, BindModel, etc.
@@ -431,6 +432,13 @@ func AllowStringQueries(allow bool) DBOption {
 	}
 }
 
+func SetRetryable(retryable Retryable) DBOption {
+	return func(db *DB) error {
+		db.Retryable = retryable
+		return nil
+	}
+}
+
 // When passed as an option to NewDB(), determines whether to ignore unmapped database columns.
 func IgnoreUnmappedCols(ignore bool) DBOption {
 	return func(db *DB) error {
@@ -469,6 +477,7 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 	newDB := &DB{
 		DB:                    db,
 		AllowStringQueries:    true,
+		Retryable:             &NoOpConfiguration{},
 		IgnoreUnmappedCols:    true,
 		IgnoreMissingCols:     false,
 		Logger:                nil,
@@ -886,12 +895,14 @@ func (db *DB) ReplaceContext(ctx context.Context, list ...interface{}) error {
 // *[]*struct{} is allowed.  It is mildly more efficient to use
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (db *DB) Select(dest interface{}, q interface{}, args ...interface{}) error {
-	return selectObjects(db.Context(), db, db, dest, q, args)
+	return db.Retryable.Retry(func() error { return selectObjects(db.Context(), db, db, dest, q, args) })
 }
 
 // SelectContext is the context version of Select.
 func (db *DB) SelectContext(ctx context.Context, dest interface{}, q interface{}, args ...interface{}) error {
-	return selectObjects(ctx, db, db, dest, q, args)
+	return db.Retryable.Retry(func() error {
+		return selectObjects(ctx, db, db, dest, q, args)
+	})
 }
 
 // Update runs a SQL UPDATE statement for each element in list. List
