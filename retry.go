@@ -33,15 +33,14 @@ var BasicRetryConfiguration = RetryConfiguration{
 
 func (retryConfig *RetryConfiguration) Retry(fn func() error) error {
 	var err error
-	for i := 1; ; i++ {
+	for i := 0; i < retryConfig.Retries; i++ {
 		err = fn()
 		if err == nil {
 			return nil
-		} else if IsRetryable(err, retryConfig.RetryableExceptions) {
-			if i < retryConfig.Retries {
+		} else if isRetryable(err, retryConfig.RetryableExceptions) {
+			// so we don't sleep unnecessarily on the last retry.
+			if i < retryConfig.Retries-1 {
 				sleeper(time.Duration(retryConfig.SleepBetweenRetriesInMillis))
-			} else {
-				break
 			}
 		} else {
 			return err
@@ -51,7 +50,7 @@ func (retryConfig *RetryConfiguration) Retry(fn func() error) error {
 	return retriesError(retryConfig.Retries, err)
 }
 
-func IsRetryable(err error, retryableExceptions map[error]bool) bool {
+func isRetryable(err error, retryableExceptions map[error]bool) bool {
 	if opErr, ok := err.(*net.OpError); ok {
 		return opErr.Timeout() || opErr.Temporary()
 	}

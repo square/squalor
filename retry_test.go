@@ -186,7 +186,7 @@ func TestIsIsRetriable(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := IsRetryable(tc.error, tc.retryableErrors)
+			result := isRetryable(tc.error, tc.retryableErrors)
 			assert.Equal(t, tc.retriable, result)
 		})
 	}
