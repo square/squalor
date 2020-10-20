@@ -369,7 +369,7 @@ func (ss stringSerializer) Serialize(w Writer) error {
 // multiple goroutines.
 type DB struct {
 	*sql.DB
-	retryConfiguration RetryConfiguration
+	retryable          Retryable
 	AllowStringQueries bool
 	// Whether to ignore missing columns referenced in models for the various DB
 	// function calls such as StructScan, Select, Insert, BindModel, etc.
@@ -432,9 +432,9 @@ func AllowStringQueries(allow bool) DBOption {
 	}
 }
 
-func SetRetryConfiguration(retryConfiguration RetryConfiguration) DBOption {
+func SetRetryable(retryable Retryable) DBOption {
 	return func(db *DB) error {
-		db.retryConfiguration = retryConfiguration
+		db.retryable = retryable
 		return nil
 	}
 }
@@ -477,7 +477,7 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 	newDB := &DB{
 		DB:                    db,
 		AllowStringQueries:    true,
-		retryConfiguration:    NoOpRetryConfiguration,
+		retryable:             &NoOpConfiguration{},
 		IgnoreUnmappedCols:    true,
 		IgnoreMissingCols:     false,
 		Logger:                nil,
@@ -895,14 +895,12 @@ func (db *DB) ReplaceContext(ctx context.Context, list ...interface{}) error {
 // *[]*struct{} is allowed.  It is mildly more efficient to use
 // *[]struct{} due to the reduced use of reflection and allocation.
 func (db *DB) Select(dest interface{}, q interface{}, args ...interface{}) error {
-	return Retry(db.retryConfiguration, func() error {
-		return selectObjects(db.Context(), db, db, dest, q, args)
-	})
+	return db.retryable.Retry(func() error { return selectObjects(db.Context(), db, db, dest, q, args) })
 }
 
 // SelectContext is the context version of Select.
 func (db *DB) SelectContext(ctx context.Context, dest interface{}, q interface{}, args ...interface{}) error {
-	return Retry(db.retryConfiguration, func() error {
+	return db.retryable.Retry(func() error {
 		return selectObjects(ctx, db, db, dest, q, args)
 	})
 }

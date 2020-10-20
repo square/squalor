@@ -8,6 +8,18 @@ import (
 	"time"
 )
 
+var sleeper = time.Sleep
+
+type Retryable interface {
+	Retry(fn func() error) error
+}
+
+type NoOpConfiguration struct{}
+
+func (n *NoOpConfiguration) Retry(fn func() error) error {
+	return fn()
+}
+
 type RetryConfiguration struct {
 	Retries                     int
 	SleepBetweenRetriesInMillis int64
@@ -19,17 +31,10 @@ var BasicRetryConfiguration = RetryConfiguration{
 	300,
 	map[error]bool{conn.ErrReadOnly: true, conn.ErrConnLost: true, conn.ErrConnCannotConnect: true, conn.ErrTimeout: true, mysql.ErrInvalidConn: true}}
 
-var NoOpRetryConfiguration = RetryConfiguration{
-	0,
-	0,
-	map[error]bool{}}
-
-func Retry(retryConfig RetryConfiguration, fn func() error) error {
-
+func (retryConfig *RetryConfiguration) Retry(fn func() error) error {
 	var err error
 	for i := 1; ; i++ {
 		err = fn()
-
 		if err == nil {
 			return nil
 		} else if IsRetryable(err, retryConfig.RetryableExceptions) {

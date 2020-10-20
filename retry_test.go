@@ -12,7 +12,7 @@ import (
 func TestRetryWithParameters(t *testing.T) {
 	testCases := []struct {
 		name               string
-		retryConfiguration RetryConfiguration
+		retryConfiguration Retryable
 		results            []error
 		expectedCalls      int
 		expectedSleptTime  time.Duration
@@ -20,7 +20,7 @@ func TestRetryWithParameters(t *testing.T) {
 	}{
 		{
 			name:               "No Error NoOpRetry",
-			retryConfiguration: NoOpRetryConfiguration,
+			retryConfiguration: &NoOpConfiguration{},
 			results:            []error{nil},
 			expectedCalls:      1,
 			expectedSleptTime:  0,
@@ -28,7 +28,7 @@ func TestRetryWithParameters(t *testing.T) {
 		},
 		{
 			name:               "An Error NoOpRetry not retried.",
-			retryConfiguration: NoOpRetryConfiguration,
+			retryConfiguration: &NoOpConfiguration{},
 			results:            []error{conn.ErrConnLost, nil},
 			expectedCalls:      1,
 			expectedSleptTime:  0,
@@ -36,7 +36,7 @@ func TestRetryWithParameters(t *testing.T) {
 		},
 		{
 			name:               "No Error",
-			retryConfiguration: BasicRetryConfiguration,
+			retryConfiguration: &BasicRetryConfiguration,
 			results:            []error{nil},
 			expectedCalls:      1,
 			expectedSleptTime:  0,
@@ -44,7 +44,7 @@ func TestRetryWithParameters(t *testing.T) {
 		},
 		{
 			name:               "Retriable Error and Success after first retry",
-			retryConfiguration: BasicRetryConfiguration,
+			retryConfiguration: &BasicRetryConfiguration,
 			results:            []error{conn.ErrConnLost, nil},
 			expectedCalls:      2,
 			expectedSleptTime:  time.Duration(BasicRetryConfiguration.SleepBetweenRetriesInMillis),
@@ -52,7 +52,7 @@ func TestRetryWithParameters(t *testing.T) {
 		},
 		{
 			name:               "Retriable Error and Success after second retry",
-			retryConfiguration: BasicRetryConfiguration,
+			retryConfiguration: &BasicRetryConfiguration,
 			results:            []error{conn.ErrConnLost, conn.ErrReadOnly, nil},
 			expectedCalls:      3,
 			expectedSleptTime:  2 * time.Duration(BasicRetryConfiguration.SleepBetweenRetriesInMillis),
@@ -60,7 +60,7 @@ func TestRetryWithParameters(t *testing.T) {
 		},
 		{
 			name:               "Retriable Error and exhausted retries",
-			retryConfiguration: BasicRetryConfiguration,
+			retryConfiguration: &BasicRetryConfiguration,
 			results:            []error{conn.ErrConnLost, conn.ErrReadOnly, conn.ErrConnLost},
 			expectedCalls:      3,
 			expectedSleptTime:  2 * time.Duration(BasicRetryConfiguration.SleepBetweenRetriesInMillis),
@@ -68,7 +68,7 @@ func TestRetryWithParameters(t *testing.T) {
 		},
 		{
 			name:               "Retriable Error and Non Retriable",
-			retryConfiguration: BasicRetryConfiguration,
+			retryConfiguration: &BasicRetryConfiguration,
 			results:            []error{conn.ErrConnLost, conn.ErrDupeKey},
 			expectedCalls:      2,
 			expectedSleptTime:  time.Duration(BasicRetryConfiguration.SleepBetweenRetriesInMillis),
@@ -90,7 +90,7 @@ func TestRetryWithParameters(t *testing.T) {
 				return value
 			}
 
-			err := Retry(tc.retryConfiguration, fn)
+			err := tc.retryConfiguration.Retry(fn)
 			assert.Equal(t, tc.expectedCalls, calls)
 			assert.Equal(t, tc.expectedSleptTime, sleptTime)
 			assert.Equal(t, tc.expectedError, err)
@@ -181,18 +181,6 @@ func TestIsIsRetriable(t *testing.T) {
 			error:           &mysql.MySQLError{Number: 1290},
 			retryableErrors: BasicRetryConfiguration.RetryableExceptions,
 			retriable:       true,
-		},
-		{
-			name:            "ErrReadOnly",
-			error:           conn.ErrReadOnly,
-			retryableErrors: NoOpRetryConfiguration.RetryableExceptions,
-			retriable:       false,
-		},
-		{
-			name:            "ErrConnLost",
-			error:           conn.ErrConnLost,
-			retryableErrors: NoOpRetryConfiguration.RetryableExceptions,
-			retriable:       false,
 		},
 	}
 
