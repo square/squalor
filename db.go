@@ -318,17 +318,14 @@ func newModel(db *DB, t reflect.Type, table Table) (*Model, error) {
 	return m, nil
 }
 
-// All builds a val expression to select all columns mapped by the model.
+// AllMapped builds a val expression to select all columns that are mapped by the model.
 func (m *Model) AllMapped() ValExprBuilder {
 	return m.C(m.mappedColNames...)
 }
 
-// All builds a val expression to select all columns on the model's Table.
-// WARNING: This is probably not the method you want. Call AllMapped() instead.
+// All builds a val expression to select all columns on the model's Table - including unmapped columns.
+// WARNING: This function does not respect the IgnoreUnmappedCols setting. Use of AllMapped() is preferred.
 func (m *Model) All() ValExprBuilder {
-	if m.db.IgnoreUnmappedCols {
-		fmt.Print("WARNING: Calling All() on a model will include unmapped columns if they are present.")
-	}
 	return m.Table.All()
 }
 
