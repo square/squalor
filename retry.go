@@ -2,10 +2,11 @@ package squalor
 
 import (
 	"fmt"
-	"github.com/go-mysql/conn"
-	"github.com/go-sql-driver/mysql"
 	"net"
 	"time"
+
+	"github.com/go-mysql/conn"
+	"github.com/go-sql-driver/mysql"
 )
 
 var sleeper = time.Sleep
