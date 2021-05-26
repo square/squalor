@@ -359,7 +359,7 @@ func TestSelectBuilder(t *testing.T) {
 		{users.Select(L(1).Plus(1)),
 			"SELECT 1+1 FROM `users`"},
 		{users.Select(users.All()),
-			"SELECT `users`.`bar`, `users`.`foo`, `users`.`qux` FROM `users`"},
+			"SELECT `users`.`bar`, `users`.`bod`, `users`.`foo`, `users`.`qux` FROM `users`"},
 		{users.Select("users.*"),
 			"SELECT `users`.* FROM `users`"},
 		{users.Select(foo.As("bar")),
@@ -499,7 +499,7 @@ func TestSelectBuilder(t *testing.T) {
 		{users.InnerJoin(objects).Select("*"),
 			"SELECT * FROM `users` INNER JOIN `objects`"},
 		{users.InnerJoin(objects).Select(users.All()),
-			"SELECT `users`.`bar`, `users`.`foo`, `users`.`qux` FROM `users` INNER JOIN `objects`"},
+			"SELECT `users`.`bar`, `users`.`bod`, `users`.`foo`, `users`.`qux` FROM `users` INNER JOIN `objects`"},
 		{users.InnerJoin(objects).Select(foo),
 			"SELECT `users`.`foo` FROM `users` INNER JOIN `objects`"},
 		{users.InnerJoin(objects).Select(baz),
@@ -527,7 +527,7 @@ func TestSelectBuilder(t *testing.T) {
 		{users.Select(users.C("foo", "bar").Coalesce()).Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
 			"SELECT COALESCE(`users`.`foo`, `users`.`bar`) FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
 		// If
-		{users.Select("*", users.C("foo").Gt(users.C("bar")).If(users.C("qux"), users.C("bod")).As("expr")).Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
+		{users.Select("*", If(users.C("foo").Gt(users.C("bar")), users.C("qux"), users.C("bod")).As("expr")).Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
 			"SELECT *, IF(`users`.`foo` > `users`.`bar`, `users`.`qux`, `users`.`bod`) AS `expr` FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
 	}
 

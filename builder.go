@@ -894,7 +894,7 @@ func unwrapBoolExpr(expr BoolExpr) BoolExpr {
 }
 
 // If creates a IF(...) expression.
-func (e BoolExprBuilder) If(lhs, rhs ValExpr) ValExprBuilder {
+func If(e BoolExprBuilder, lhs, rhs ValExpr) ValExprBuilder {
 	return ValExprBuilder{
 		&FuncExpr{
 			Name:     "IF",
