@@ -328,7 +328,7 @@ func TestUpdateBuilderErrors(t *testing.T) {
 
 func TestSelectBuilder(t *testing.T) {
 	type User struct {
-		Foo, Bar, Qux string
+		Foo, Bar, Bod, Qux string
 	}
 	users := NewTable("users", User{})
 	foo := users.C("foo")
@@ -523,6 +523,12 @@ func TestSelectBuilder(t *testing.T) {
 		// Subquery
 		{users.Select("*").Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
 			"SELECT * FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
+		// Coalesce
+		{users.Select(users.C("foo", "bar").Coalesce()).Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
+			"SELECT COALESCE(`users`.`foo`, `users`.`bar`) FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
+		// If
+		{users.Select("*", users.C("foo").Gt(users.C("bar")).If(users.C("qux"), users.C("bod")).As("expr")).Where(foo.InTuple(&Subquery{objects.Select(objects.C("foo")).Where(objects.C("foo").Gt(10))})),
+			"SELECT *, IF(`users`.`foo` > `users`.`bar`, `users`.`qux`, `users`.`bod`) AS `expr` FROM `users` WHERE `users`.`foo` IN (SELECT `objects`.`foo` FROM `objects` WHERE `objects`.`foo` > 10)"},
 	}
 
 	for _, c := range testCases {

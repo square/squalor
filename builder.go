@@ -789,6 +789,11 @@ func (b ValExprBuilder) makeFunc(name string, distinct bool) ValExprBuilder {
 		}}
 }
 
+// Coalesce creates a COALESCE(...) expression.
+func (b ValExprBuilder) Coalesce() ValExprBuilder {
+	return b.makeFunc("COALESCE", false)
+}
+
 // Count creates a COUNT(...) expression.
 func (b ValExprBuilder) Count() ValExprBuilder {
 	return b.makeFunc("COUNT", false)
@@ -886,6 +891,27 @@ func unwrapBoolExpr(expr BoolExpr) BoolExpr {
 		return b.BoolExpr
 	}
 	return expr
+}
+
+// If creates a IF(...) expression.
+func (e BoolExprBuilder) If(lhs, rhs ValExpr) ValExprBuilder {
+	return ValExprBuilder{
+		&FuncExpr{
+			Name:     "IF",
+			Distinct: false,
+			Exprs: SelectExprs{
+				&NonStarExpr{
+					Expr: e,
+				},
+				&NonStarExpr{
+					Expr: unwrapValExpr(lhs),
+				},
+				&NonStarExpr{
+					Expr: unwrapValExpr(rhs),
+				},
+			},
+		},
+	}
 }
 
 // And creates an AND expression.

@@ -67,6 +67,42 @@ type Writer interface {
 	WriteStr(node StrVal) error
 }
 
+// WriterWrapper defines an interface for writing a AST as SQL.
+type WriterWrapper struct {
+	Writer
+	w io.Writer
+}
+
+func NewWriterWrapper(w io.Writer) *WriterWrapper {
+	return &WriterWrapper{w: w}
+}
+
+func (w *WriterWrapper) Write(p []byte) (n int, err error) {
+	return w.w.Write(p)
+}
+
+func (w *WriterWrapper) WriteRaw(node RawVal) error {
+	return encodeSQLValue(w.w, node.Val)
+}
+
+func (w *WriterWrapper) WriteEncoded(node EncodedVal) error {
+	_, err := w.w.Write(node.Val)
+	return err
+}
+
+func (w *WriterWrapper) WriteStr(node StrVal) error {
+	return encodeSQLString(w.w, string(node))
+}
+
+func (w *WriterWrapper) WriteBytes(node BytesVal) error {
+	return encodeSQLBytes(w.w, node)
+}
+
+func (w *WriterWrapper) WriteNum(node NumVal) error {
+	_, err := io.WriteString(w.w, string(node))
+	return err
+}
+
 type standardWriter struct {
 	bytes.Buffer
 }
