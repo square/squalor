@@ -235,7 +235,13 @@ const (
 )
 
 func (node *Union) Serialize(w Writer) error {
+	if _, err := w.Write(astOpenParen); err != nil {
+		return err
+	}
 	if err := node.Left.Serialize(w); err != nil {
+		return err
+	}
+	if _, err := w.Write(astCloseParen); err != nil {
 		return err
 	}
 	if _, err := w.Write(astSpace); err != nil {
@@ -247,7 +253,16 @@ func (node *Union) Serialize(w Writer) error {
 	if _, err := w.Write(astSpace); err != nil {
 		return err
 	}
-	return node.Right.Serialize(w)
+	if _, err := w.Write(astOpenParen); err != nil {
+		return err
+	}
+	if err := node.Right.Serialize(w); err != nil {
+		return err
+	}
+	if _, err := w.Write(astCloseParen); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Insert represents an INSERT or REPLACE statement.
