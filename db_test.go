@@ -1198,6 +1198,17 @@ func TestWithMySql57Deadline(t *testing.T) {
 		!strings.HasSuffix(logger.lastQuery, ") */ * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)") {
 		t.Fatalf("Expected %q, got %q", "(SELECT /*+ MAX_EXECUTION_TIME(?) */ FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)", logger.lastQuery)
 	}
+
+	// Test with white space
+	logger.lastQuery = ""
+
+	db.QueryRow(`
+     SELECT * from objects LIMIT 1`)
+
+	if !strings.HasPrefix(logger.lastQuery, "SELECT /*+ MAX_EXECUTION_TIME(") ||
+		!strings.HasSuffix(logger.lastQuery, ") */ * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) */ * from objects LIMIT 1", logger.lastQuery)
+	}
 }
 
 func TestWithoutDeadline(t *testing.T) {

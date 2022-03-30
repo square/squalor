@@ -518,6 +518,8 @@ func mySql57DeadlineQueryRewriter(db *DB, query interface{}, millis int64) (quer
 	if err != nil {
 		return nil, err
 	}
+	// Remove white space so that it does not affect replacing SELECT
+	querystr = strings.TrimSpace(querystr)
 
 	if strings.HasPrefix(querystr, "SELECT ") || strings.HasPrefix(querystr, "(SELECT ") {
 		querystr = strings.Replace(querystr, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", millis), 1)
