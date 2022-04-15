@@ -1,4 +1,4 @@
-module github.com/square/squalor/m/v2
+module github.com/square/squalor
 
 go 1.17
 
