@@ -394,9 +394,11 @@ type DB struct {
 	mappings           map[reflect.Type]fieldMap
 
 	// Function to add a deadline to a query.
-	deadlineQueryRewriter func(db *DB, query string, millis int64) (queryWithDeadline string, err error)
+	deadlineQueryRewriter func(db *DB, query string, deadline time.Duration) (queryWithDeadline string)
 	// Function to add info from context to a query.
 	contextInfoRewriter func(ctx context.Context, db *DB, query string) (queryWithContext string, err error)
+	// Default deadline to apply if none is present on the Context.
+	defaultDeadline time.Duration
 }
 
 type DBOption func(*DB) error
@@ -432,6 +434,15 @@ func ContextInfoRewriter(infoFromContext func(ctx context.Context) string) func(
 			query = fmt.Sprintf("/* %s */ %s", infoFromContext(ctx), query)
 			return query, nil
 		}
+		return nil
+	}
+}
+
+// Sets a duration to be used as a default when no deadline is specified by the incoming Context.
+// Only works if one of the options QueryDeadlinePercona56 or QueryDeadlineMySQL57 is specified.
+func QueryDeadlineDefault(defaultDeadline time.Duration) DBOption {
+	return func(db *DB) error {
+		db.defaultDeadline = defaultDeadline
 		return nil
 	}
 }
@@ -508,19 +519,22 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 	return newDB, nil
 }
 
-func noopDeadlineQueryRewriter(db *DB, query string, millis int64) (queryWithDeadline string, err error) {
-	return query, nil
+func noopDeadlineQueryRewriter(db *DB, query string, deadline time.Duration) (queryWithDeadline string) {
+	return query
 }
 
-func perconaDeadlineQueryRewriter(db *DB, query string, millis int64) (queryWithDeadline string, err error) {
-	return fmt.Sprintf("SET STATEMENT max_statement_time=%d FOR %s", millis, query), nil
-}
-
-func mySql57DeadlineQueryRewriter(db *DB, query string, millis int64) (queryWithDeadline string, err error) {
-	if strings.HasPrefix(query, "SELECT ") || strings.HasPrefix(query, "(SELECT ") {
-		query = strings.Replace(query, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", millis), 1)
+func perconaDeadlineQueryRewriter(db *DB, query string, deadline time.Duration) (queryWithDeadline string) {
+	if deadline.Milliseconds() > 0 {
+		return fmt.Sprintf("SET STATEMENT max_statement_time=%d FOR %s", deadline.Milliseconds(), query)
 	}
-	return query, nil
+	return query
+}
+
+func mySql57DeadlineQueryRewriter(db *DB, query string, deadline time.Duration) (queryWithDeadline string) {
+	if deadline.Milliseconds() > 0 && strings.HasPrefix(query, "SELECT ") || strings.HasPrefix(query, "(SELECT ") {
+		return strings.Replace(query, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", deadline.Milliseconds()), 1)
+	}
+	return query
 }
 
 func (db *DB) logQuery(ctx context.Context, query Serializer, exec Executor, start time.Time, err error) {
@@ -775,26 +789,23 @@ func (db *DB) Query(q interface{}, args ...interface{}) (*Rows, error) {
 func rewriteQuery(ctx context.Context, db *DB, start time.Time, q string) (string, error) {
 	// Remove white space so that it does not affect replacing SELECT
 	q = strings.TrimSpace(q)
+
+	deadline := db.defaultDeadline
 	if ctx != nil {
-		var err error
-		if deadline, ok := ctx.Deadline(); ok && !deadline.IsZero() {
-			// Set an execution deadline for the query.
-			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
-			if remainingMillis > 0 {
-				q, err = db.deadlineQueryRewriter(db, q, remainingMillis)
-				if err != nil {
-					return "", err
-				}
-			} else {
+		if contextDeadline, ok := ctx.Deadline(); ok && !contextDeadline.IsZero() {
+			if contextDeadline.Before(start) {
 				return "", context.DeadlineExceeded
 			}
+			deadline = contextDeadline.Sub(start)
 		}
+	}
+	q = db.deadlineQueryRewriter(db, q, deadline)
 
-		if db.contextInfoRewriter != nil {
-			q, err = db.contextInfoRewriter(ctx, db, q)
-			if err != nil {
-				return "", err
-			}
+	if ctx != nil && db.contextInfoRewriter != nil {
+		var err error
+		q, err = db.contextInfoRewriter(ctx, db, q)
+		if err != nil {
+			return "", err
 		}
 	}
 	return q, nil
