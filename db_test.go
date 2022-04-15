@@ -1211,12 +1211,51 @@ func TestWithMySql57Deadline(t *testing.T) {
 	}
 }
 
+func TestWithMySql57DefaultDeadline(t *testing.T) {
+	logger := &TestLogger{}
+	db := makeTestDBWithOptions(t, []DBOption{QueryDeadlineMySQL57, QueryDeadlineDefault(time.Minute), SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "user_id", "123")
+
+	db = db.WithContext(ctx).(*DB)
+
+	logger.lastQuery = ""
+
+	db.Query("SELECT * from objects")
+	if logger.lastQuery != "SELECT /*+ MAX_EXECUTION_TIME(60000) */ * from objects" {
+		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(60000) */ * from objects", logger.lastQuery)
+	}
+
+	var cancel func()
+	ctx, cancel = context.WithDeadline(ctx, time.Now().Add(10*time.Second))
+	defer cancel()
+
+	db = db.WithContext(ctx).(*DB)
+
+	logger.lastQuery = ""
+
+	db.Query("SELECT * from objects")
+	if !strings.HasPrefix(logger.lastQuery, "SELECT /*+ MAX_EXECUTION_TIME(") ||
+		!strings.HasSuffix(logger.lastQuery, ") */ * from objects") {
+		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) */ * from objects", logger.lastQuery)
+	}
+
+	lParen := strings.Index(logger.lastQuery, "(")
+	rParen := strings.Index(logger.lastQuery, ")")
+	millis, _ := strconv.Atoi(logger.lastQuery[lParen+1 : rParen])
+	if millis > 10000 {
+		t.Fatalf("Expected deadline <= 10000, got %d", millis)
+	}
+}
+
 func TestWithoutDeadline(t *testing.T) {
 	logger := &TestLogger{}
 	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
-	db.deadlineQueryRewriter = func(db *DB, query string, millis int64) (string, error) {
+	db.deadlineQueryRewriter = func(db *DB, query string, deadline time.Duration) string {
 		t.Fatal("DeadlineQueryRewriter should not be called")
-		return "", nil
+		return ""
 	}
 	defer db.Close()
 
