@@ -1214,9 +1214,9 @@ func TestWithMySql57Deadline(t *testing.T) {
 func TestWithoutDeadline(t *testing.T) {
 	logger := &TestLogger{}
 	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
-	db.deadlineQueryRewriter = func(db *DB, query interface{}, millis int64) (interface{}, error) {
+	db.deadlineQueryRewriter = func(db *DB, query string, millis int64) (string, error) {
 		t.Fatal("DeadlineQueryRewriter should not be called")
-		return nil, nil
+		return "", nil
 	}
 	defer db.Close()
 
@@ -2174,4 +2174,81 @@ func BenchmarkDBUpsert1(b *testing.B) {
 
 func BenchmarkDBUpsertN(b *testing.B) {
 	benchmarkUpsert(b, 100000, makeSqlutilBenchDB(b))
+}
+
+func TestWithContextQueryRewriter(t *testing.T) {
+	logger := &TestLogger{}
+	contextInfo := func(ctx context.Context) string {
+		return "test"
+	}
+	db := makeTestDBWithOptions(t, []DBOption{ContextInfoRewriter(contextInfo), SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	ctx := context.WithValue(context.Background(), "user_id", "123")
+	db = db.WithContext(ctx).(*DB)
+
+	// Test tx.Query
+	logger.lastQuery = ""
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx.Query("SELECT * from objects")
+
+	if logger.lastQuery != "/* test */ SELECT * from objects" {
+		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test db.Query
+	logger.lastQuery = ""
+
+	db.Query("SELECT * from objects")
+	if logger.lastQuery != "/* test */ SELECT * from objects" {
+		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects", logger.lastQuery)
+	}
+
+	// Test tx.QueryRow
+	logger.lastQuery = ""
+
+	tx, err = db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx.QueryRow("SELECT * from objects LIMIT 1")
+
+	if logger.lastQuery != "/* test */ SELECT * from objects LIMIT 1" {
+		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test db.QueryRow
+	logger.lastQuery = ""
+
+	db.QueryRow("SELECT * from objects LIMIT 1")
+
+	if logger.lastQuery != "/* test */ SELECT * from objects LIMIT 1" {
+		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	}
+
+	// Test with white space
+	logger.lastQuery = ""
+
+	db.QueryRow(`
+     SELECT * from objects LIMIT 1`)
+
+	if logger.lastQuery != "/* test */ SELECT * from objects LIMIT 1" {
+		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	}
 }

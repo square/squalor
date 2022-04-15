@@ -394,7 +394,9 @@ type DB struct {
 	mappings           map[reflect.Type]fieldMap
 
 	// Function to add a deadline to a query.
-	deadlineQueryRewriter func(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error)
+	deadlineQueryRewriter func(db *DB, query string, millis int64) (queryWithDeadline string, err error)
+	// Function to add info from context to a query.
+	contextInfoRewriter func(ctx context.Context, db *DB, query string) (queryWithContext string, err error)
 }
 
 type DBOption func(*DB) error
@@ -419,6 +421,19 @@ func QueryDeadlinePercona56(db *DB) error {
 func QueryDeadlineMySQL57(db *DB) error {
 	db.deadlineQueryRewriter = mySql57DeadlineQueryRewriter
 	return nil
+}
+
+// When passed as an option to NewDB(), enables query deadlines on MySql 5.7.4 or later.
+// Query deadlines only affect SELECT queries run via the Executor.Query function.
+// It us up to the underlying database engine to enforce the deadline.
+func ContextInfoRewriter(infoFromContext func(ctx context.Context) string) func(*DB) error {
+	return func(db *DB) error {
+		db.contextInfoRewriter = func(ctx context.Context, db *DB, query string) (queryWithInfo string, err error) {
+			query = fmt.Sprintf("/* %s */ %s", infoFromContext(ctx), query)
+			return query, nil
+		}
+		return nil
+	}
 }
 
 // When passed as an option to NewDB(), determines whether to allow string queries.
@@ -493,38 +508,19 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 	return newDB, nil
 }
 
-func noopDeadlineQueryRewriter(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error) {
+func noopDeadlineQueryRewriter(db *DB, query string, millis int64) (queryWithDeadline string, err error) {
 	return query, nil
 }
 
-func perconaDeadlineQueryRewriter(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error) {
-	serializer, err := db.getSerializer(query)
-	if err != nil {
-		return nil, err
-	}
-	querystr, err := Serialize(serializer)
-	if err != nil {
-		return nil, err
-	}
-	return fmt.Sprintf("SET STATEMENT max_statement_time=%d FOR %s", millis, querystr), nil
+func perconaDeadlineQueryRewriter(db *DB, query string, millis int64) (queryWithDeadline string, err error) {
+	return fmt.Sprintf("SET STATEMENT max_statement_time=%d FOR %s", millis, query), nil
 }
 
-func mySql57DeadlineQueryRewriter(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error) {
-	serializer, err := db.getSerializer(query)
-	if err != nil {
-		return nil, err
+func mySql57DeadlineQueryRewriter(db *DB, query string, millis int64) (queryWithDeadline string, err error) {
+	if strings.HasPrefix(query, "SELECT ") || strings.HasPrefix(query, "(SELECT ") {
+		query = strings.Replace(query, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", millis), 1)
 	}
-	querystr, err := Serialize(serializer)
-	if err != nil {
-		return nil, err
-	}
-	// Remove white space so that it does not affect replacing SELECT
-	querystr = strings.TrimSpace(querystr)
-
-	if strings.HasPrefix(querystr, "SELECT ") || strings.HasPrefix(querystr, "(SELECT ") {
-		querystr = strings.Replace(querystr, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", millis), 1)
-	}
-	return querystr, nil
+	return query, nil
 }
 
 func (db *DB) logQuery(ctx context.Context, query Serializer, exec Executor, start time.Time, err error) {
@@ -776,19 +772,28 @@ func (db *DB) Query(q interface{}, args ...interface{}) (*Rows, error) {
 }
 
 // Rewrite the query to include a deadline if one is present in the context.
-func rewriteQuery(ctx context.Context, db *DB, start time.Time, q interface{}) (interface{}, error) {
+func rewriteQuery(ctx context.Context, db *DB, start time.Time, q string) (string, error) {
+	// Remove white space so that it does not affect replacing SELECT
+	q = strings.TrimSpace(q)
 	if ctx != nil {
+		var err error
 		if deadline, ok := ctx.Deadline(); ok && !deadline.IsZero() {
 			// Set an execution deadline for the query.
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
-				var err error
 				q, err = db.deadlineQueryRewriter(db, q, remainingMillis)
 				if err != nil {
-					return nil, err
+					return "", err
 				}
 			} else {
-				return nil, context.DeadlineExceeded
+				return "", context.DeadlineExceeded
+			}
+		}
+
+		if db.contextInfoRewriter != nil {
+			q, err = db.contextInfoRewriter(ctx, db, q)
+			if err != nil {
+				return "", err
 			}
 		}
 	}
@@ -800,12 +805,8 @@ func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface
 	ctx, finishTrace := db.addTracerToContext(ctx, opQuery)
 	defer finishTrace()
 	start := time.Now()
-	rewrittenQuery, err := rewriteQuery(ctx, db, start, q)
-	if err != nil {
-		return nil, err
-	}
 
-	serializer, err := db.getSerializer(rewrittenQuery)
+	serializer, err := db.getSerializer(q)
 	if err != nil {
 		return nil, err
 	}
@@ -813,10 +814,14 @@ func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface
 	if err != nil {
 		return nil, err
 	}
+	queryStr, err = rewriteQuery(ctx, db, start, queryStr)
+	if err != nil {
+		return nil, err
+	}
 
 	argsConverted := argsConvert(args)
 	rows, err := query(ctx, db.DB, queryStr, argsConverted...)
-	db.logQuery(ctx, serializer, db, start, err)
+	db.logQuery(ctx, stringSerializer(queryStr), db, start, err)
 
 	if err != nil {
 		return nil, err
@@ -837,12 +842,8 @@ func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 	ctx, finishTrace := db.addTracerToContext(ctx, opQueryRow)
 	defer finishTrace()
 	start := time.Now()
-	rewrittenQuery, err := rewriteQuery(ctx, db, start, q)
-	if err != nil {
-		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
-	}
 
-	serializer, err := db.getSerializer(rewrittenQuery)
+	serializer, err := db.getSerializer(q)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
@@ -850,10 +851,14 @@ func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
+	queryStr, err = rewriteQuery(ctx, db, start, queryStr)
+	if err != nil {
+		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
+	}
 
 	argsConverted := argsConvert(args)
 	rows, err := query(ctx, db.DB, queryStr, argsConverted...)
-	db.logQuery(ctx, serializer, db, start, err)
+	db.logQuery(ctx, stringSerializer(queryStr), db, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: db}, err: err}
 }
@@ -1130,23 +1135,23 @@ func (tx *Tx) QueryContext(ctx context.Context, q interface{}, args ...interface
 	ctx, finishTrace := tx.DB.addTracerToContext(ctx, opQuery)
 	defer finishTrace()
 	start := time.Now()
-	rewrittenQuery, err := rewriteQuery(ctx, tx.DB, start, q)
-	if err != nil {
-		return nil, err
-	}
 
-	serializer, err := tx.DB.getSerializer(rewrittenQuery)
+	serializer, err := tx.DB.getSerializer(q)
 	if err != nil {
 		return nil, err
 	}
-	querystr, err := Serialize(serializer)
+	queryStr, err := Serialize(serializer)
+	if err != nil {
+		return nil, err
+	}
+	queryStr, err = rewriteQuery(ctx, tx.DB, start, queryStr)
 	if err != nil {
 		return nil, err
 	}
 
 	argsConverted := argsConvert(args)
-	rows, err := query(ctx, tx.Tx, querystr, argsConverted...)
-	tx.DB.logQuery(ctx, serializer, tx, start, err)
+	rows, err := query(ctx, tx.Tx, queryStr, argsConverted...)
+	tx.DB.logQuery(ctx, stringSerializer(queryStr), tx, start, err)
 
 	if err != nil {
 		return nil, err
@@ -1167,23 +1172,23 @@ func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 	ctx, finishTrace := tx.DB.addTracerToContext(ctx, opQueryRow)
 	defer finishTrace()
 	start := time.Now()
-	rewrittenQuery, err := rewriteQuery(ctx, tx.DB, start, q)
-	if err != nil {
-		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
-	}
 
-	serializer, err := tx.DB.getSerializer(rewrittenQuery)
+	serializer, err := tx.DB.getSerializer(q)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
-	querystr, err := Serialize(serializer)
+	queryStr, err := Serialize(serializer)
+	if err != nil {
+		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
+	}
+	queryStr, err = rewriteQuery(ctx, tx.DB, start, queryStr)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
 
 	argsConverted := argsConvert(args)
-	rows, err := query(ctx, tx.Tx, querystr, argsConverted...)
-	tx.DB.logQuery(ctx, serializer, tx, start, err)
+	rows, err := query(ctx, tx.Tx, queryStr, argsConverted...)
+	tx.DB.logQuery(ctx, stringSerializer(queryStr), tx, start, err)
 
 	return &Row{rows: Rows{Rows: rows, db: tx.DB}, err: err}
 }
