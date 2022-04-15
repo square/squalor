@@ -395,6 +395,9 @@ type DB struct {
 
 	// Function to add a deadline to a query.
 	deadlineQueryRewriter func(db *DB, query interface{}, millis int64) (queryWithDeadline interface{}, err error)
+	// Function to add a deadline to a query.
+	contextInfoRewriter func(ctx context.Context, db *DB, query interface{}) (queryWithContext interface{}, err error)
+	infoFromContext     func(ctx context.Context) (info string)
 }
 
 type DBOption func(*DB) error
@@ -419,6 +422,17 @@ func QueryDeadlinePercona56(db *DB) error {
 func QueryDeadlineMySQL57(db *DB) error {
 	db.deadlineQueryRewriter = mySql57DeadlineQueryRewriter
 	return nil
+}
+
+// When passed as an option to NewDB(), enables query deadlines on MySql 5.7.4 or later.
+// Query deadlines only affect SELECT queries run via the Executor.Query function.
+// It us up to the underlying database engine to enforce the deadline.
+func ContextInfoRewriter(infoFromContext func(ctx context.Context) string) func(*DB) error {
+	return func(db *DB) error {
+		db.contextInfoRewriter = contextInfoRewriter
+		db.infoFromContext = infoFromContext
+		return nil
+	}
 }
 
 // When passed as an option to NewDB(), determines whether to allow string queries.
@@ -514,17 +528,32 @@ func mySql57DeadlineQueryRewriter(db *DB, query interface{}, millis int64) (quer
 	if err != nil {
 		return nil, err
 	}
-	querystr, err := Serialize(serializer)
+	queryStr, err := Serialize(serializer)
 	if err != nil {
 		return nil, err
 	}
 	// Remove white space so that it does not affect replacing SELECT
-	querystr = strings.TrimSpace(querystr)
+	queryStr = strings.TrimSpace(queryStr)
 
-	if strings.HasPrefix(querystr, "SELECT ") || strings.HasPrefix(querystr, "(SELECT ") {
-		querystr = strings.Replace(querystr, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", millis), 1)
+	if strings.HasPrefix(queryStr, "SELECT ") || strings.HasPrefix(queryStr, "(SELECT ") {
+		queryStr = strings.Replace(queryStr, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", millis), 1)
 	}
-	return querystr, nil
+	return queryStr, nil
+}
+
+func contextInfoRewriter(ctx context.Context, db *DB, query interface{}) (queryWithInfo interface{}, err error) {
+	serializer, err := db.getSerializer(query)
+	if err != nil {
+		return nil, err
+	}
+	queryStr, err := Serialize(serializer)
+	if err != nil {
+		return nil, err
+	}
+	queryStr = strings.TrimSpace(queryStr)
+	info := db.infoFromContext(ctx)
+	queryStr = fmt.Sprintf("/* %s */ %s", info, queryStr)
+	return queryStr, nil
 }
 
 func (db *DB) logQuery(ctx context.Context, query Serializer, exec Executor, start time.Time, err error) {
@@ -778,17 +807,24 @@ func (db *DB) Query(q interface{}, args ...interface{}) (*Rows, error) {
 // Rewrite the query to include a deadline if one is present in the context.
 func rewriteQuery(ctx context.Context, db *DB, start time.Time, q interface{}) (interface{}, error) {
 	if ctx != nil {
+		var err error
 		if deadline, ok := ctx.Deadline(); ok && !deadline.IsZero() {
 			// Set an execution deadline for the query.
 			remainingMillis := int64(deadline.Sub(start) / time.Millisecond)
 			if remainingMillis > 0 {
-				var err error
 				q, err = db.deadlineQueryRewriter(db, q, remainingMillis)
 				if err != nil {
 					return nil, err
 				}
 			} else {
 				return nil, context.DeadlineExceeded
+			}
+		}
+
+		if db.contextInfoRewriter != nil {
+			q, err = db.contextInfoRewriter(ctx, db, q)
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
