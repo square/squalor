@@ -799,7 +799,9 @@ func rewriteQuery(ctx context.Context, db *DB, start time.Time, q string) (strin
 			deadline = contextDeadline.Sub(start)
 		}
 	}
-	q = db.deadlineQueryRewriter(db, q, deadline)
+	if deadline > 0 {
+		q = db.deadlineQueryRewriter(db, q, deadline)
+	}
 
 	if ctx != nil && db.contextInfoRewriter != nil {
 		var err error
