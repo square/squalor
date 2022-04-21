@@ -2234,10 +2234,13 @@ func TestWithContextQueryRewriter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tx.Query("SELECT * from objects")
+	q := "SELECT * from objects LIMIT 1"
 
-	if logger.lastQuery != "/* test */ SELECT * from objects" {
-		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects", logger.lastQuery)
+	tx.Query(q)
+
+	expected := "/* test */ " + q
+	if logger.lastQuery != expected {
+		t.Fatalf("Expected %q, got %q", expected, logger.lastQuery)
 	}
 
 	err = tx.Commit()
@@ -2248,9 +2251,9 @@ func TestWithContextQueryRewriter(t *testing.T) {
 	// Test db.Query
 	logger.lastQuery = ""
 
-	db.Query("SELECT * from objects")
-	if logger.lastQuery != "/* test */ SELECT * from objects" {
-		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects", logger.lastQuery)
+	db.Query(q)
+	if logger.lastQuery != expected {
+		t.Fatalf("Expected %q, got %q", expected, logger.lastQuery)
 	}
 
 	// Test tx.QueryRow
@@ -2261,10 +2264,10 @@ func TestWithContextQueryRewriter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tx.QueryRow("SELECT * from objects LIMIT 1")
+	tx.QueryRow(q)
 
-	if logger.lastQuery != "/* test */ SELECT * from objects LIMIT 1" {
-		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	if logger.lastQuery != expected {
+		t.Fatalf("Expected %q, got %q", expected, logger.lastQuery)
 	}
 
 	err = tx.Commit()
@@ -2275,19 +2278,68 @@ func TestWithContextQueryRewriter(t *testing.T) {
 	// Test db.QueryRow
 	logger.lastQuery = ""
 
-	db.QueryRow("SELECT * from objects LIMIT 1")
+	db.QueryRow(q)
 
-	if logger.lastQuery != "/* test */ SELECT * from objects LIMIT 1" {
-		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	if logger.lastQuery != expected {
+		t.Fatalf("Expected %q, got %q", "/* test */ "+q, logger.lastQuery)
 	}
 
 	// Test with white space
 	logger.lastQuery = ""
 
 	db.QueryRow(`
-     SELECT * from objects LIMIT 1`)
+     ` + q)
 
-	if logger.lastQuery != "/* test */ SELECT * from objects LIMIT 1" {
-		t.Fatalf("Expected %q, got %q", "/* test */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	if logger.lastQuery != expected {
+		t.Fatalf("Expected %q, got %q", expected, logger.lastQuery)
+	}
+
+	db.Close()
+	badContextInfo := func(ctx context.Context) string {
+		return "*/ DROP TABLE users; /*"
+	}
+	db = makeTestDBWithOptions(t, []DBOption{ContextInfoRewriter(badContextInfo), SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	db = db.WithContext(ctx).(*DB)
+
+	db.QueryRow(q)
+
+	expected = q
+	// The malicious info string was not inserted!
+	if logger.lastQuery != expected {
+		t.Fatalf("Expected %q, got %q", expected, logger.lastQuery)
+	}
+
+	db.Close()
+	badContextInfo = func(ctx context.Context) string {
+		return "+ BKA(t1)"
+	}
+	db = makeTestDBWithOptions(t, []DBOption{ContextInfoRewriter(badContextInfo), SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	db = db.WithContext(ctx).(*DB)
+
+	db.QueryRow(q)
+
+	// The malicious info string was not inserted!
+	if logger.lastQuery != expected {
+		t.Fatalf("Expected %q, got %q", expected, logger.lastQuery)
+	}
+
+	db.Close()
+	badContextInfo = func(ctx context.Context) string {
+		return "! STRAIGHT_JOIN"
+	}
+	db = makeTestDBWithOptions(t, []DBOption{ContextInfoRewriter(badContextInfo), SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	db = db.WithContext(ctx).(*DB)
+
+	db.QueryRow(q)
+
+	// The malicious info string was not inserted!
+	if logger.lastQuery != expected {
+		t.Fatalf("Expected %q, got %q", expected, logger.lastQuery)
 	}
 }
