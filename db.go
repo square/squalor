@@ -431,7 +431,13 @@ func QueryDeadlineMySQL57(db *DB) error {
 func ContextInfoRewriter(infoFromContext func(ctx context.Context) string) func(*DB) error {
 	return func(db *DB) error {
 		db.contextInfoRewriter = func(ctx context.Context, db *DB, query string) (queryWithInfo string, err error) {
-			query = fmt.Sprintf("/* %s */ %s", infoFromContext(ctx), query)
+			info := infoFromContext(ctx)
+			// Do not allow info if it would close the comment. This could be a SQL injection.
+			// Also prevent + or ! at the start, since MySQL can interpret these as commands.
+			// https://dev.mysql.com/doc/refman/5.7/en/comments.html
+			if !strings.Contains(info, "*/") && !strings.HasPrefix(info, "+") && !strings.HasPrefix(info, "!") {
+				query = fmt.Sprintf("/* %s */ %s", infoFromContext(ctx), query)
+			}
 			return query, nil
 		}
 		return nil
