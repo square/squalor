@@ -24,7 +24,7 @@ jobs:
     - name: Set up MySQL
       run: |
         sudo /etc/init.d/mysql start
-        mysql -u root -e 'CREATE DATABASE ${{ env.DB_DATABASE }};'
+        mysql -u root -e 'CREATE DATABASE squalor_test;'
 
     - name: Build
       run: go build -v ./...
