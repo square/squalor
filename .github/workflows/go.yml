@@ -35,17 +35,6 @@ jobs:
       with:
         go-version: 1.19
 
-    - name: Verify MySQL
-      run: |
-        while ! mysqladmin ping -h"127.0.0.1" -P3306 --silent; do
-         sleep 1
-        done   
-  
-#    - name: Set up MySQL
-#      run: |
-#        sudo /etc/init.d/mysql start
-#        mysql -u root -p='root' -e 'CREATE DATABASE squalor_test;'
-
     - name: Build
       run: go build -v ./...
 
