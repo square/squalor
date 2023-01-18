@@ -24,10 +24,10 @@ jobs:
         ports:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
-
+        
     steps:
     - uses: actions/checkout@v3
-
+    
     - name: Set up Go
       uses: actions/setup-go@v3
       with:
@@ -37,7 +37,7 @@ jobs:
       run: go build -v ./...
 
     - name: Test
-      run: go test -v -race ./...
-      env:
-        MYSQL_HOST=localhost
-        MYSQL_PASSWORD=root
+      run: |
+        export MYSQL_HOST=localhost
+        export MYSQL_PASSWORD=root
+        go test -v -race ./...
