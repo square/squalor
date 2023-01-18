@@ -32,7 +32,6 @@ jobs:
     
     - name: Check MySQL
       run: |
-        mysqladmin status
         mysql -h=mysql -u=root -p=root -e 'CREATE DATABASE squalor_test;'
 
     - name: Set up Go
