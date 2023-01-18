@@ -33,7 +33,7 @@ jobs:
     - name: Check MySQL
       run: |
         mysqladmin status
-        mysql -u=root -p=root -e 'CREATE DATABASE squalor_test;'
+        mysql -h=mysql -u=root -p=root -e 'CREATE DATABASE squalor_test;'
 
     - name: Set up Go
       uses: actions/setup-go@v3
@@ -46,4 +46,5 @@ jobs:
     - name: Test
       run: |
         export MYSQL_PASSWORD='root'
+        export MYSQL_HOSTNAME='mysql'
         go test -v -race ./...
