@@ -36,7 +36,7 @@ jobs:
       run: go build -v ./...
 
     - name: Test
-      run: |
-        export MYSQL_HOST=localhost
-        export MYSQL_PASSWORD=root
-        go test -v -race ./...
+      env:
+        MYSQL_HOST: localhost
+        MYSQL_PASSWORD: root
+      run: go test -v -race ./...
