@@ -32,7 +32,7 @@ jobs:
     
     - name: Check MySQL
       run: |
-        mysql -h=mysql -u=root -p=root -e 'CREATE DATABASE squalor_test;'
+        mysql -h mysql -u root --password=root -e 'CREATE DATABASE squalor_test;'
 
     - name: Set up Go
       uses: actions/setup-go@v3
