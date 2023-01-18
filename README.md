@@ -1,4 +1,4 @@
-# Squalor [![Circle CI](https://circleci.com/gh/square/squalor/tree/master.png?style=badge)](https://circleci.com/gh/square/squalor/tree/master)
+# Squalor
 
 Squalor is a library of SQL utilities for marshalling and
 unmarshalling of model structs into table rows and programmatic

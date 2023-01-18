@@ -52,7 +52,7 @@ func TestLoadTableNameInjection(t *testing.T) {
 
 	// Use strings.ToLower in order to prevent error message discrepancies
 	// between running tests locally through integration_test.sh and the
-	// build running through circle.ci
+	// build running through CI.
 	if strings.ToLower(err.Error()) != strings.ToLower(expectedError) {
 		t.Fatalf("Expected error %q from injection attempt, got %q", expectedError, err.Error())
 	}
