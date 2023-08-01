@@ -537,7 +537,7 @@ func perconaDeadlineQueryRewriter(db *DB, query string, deadline time.Duration) 
 }
 
 func mySql57DeadlineQueryRewriter(db *DB, query string, deadline time.Duration) (queryWithDeadline string) {
-	if deadline.Milliseconds() > 0 && strings.HasPrefix(query, "SELECT ") || strings.HasPrefix(query, "(SELECT ") {
+	if deadline.Milliseconds() > 0 && (strings.HasPrefix(query, "SELECT ") || strings.HasPrefix(query, "(SELECT ")) {
 		return strings.Replace(query, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", deadline.Milliseconds()), 1)
 	}
 	return query
