@@ -54,6 +54,23 @@ func getTmpBuffer(w io.Writer, n int) []byte {
 }
 
 func encodeSQLValue(w io.Writer, arg interface{}) error {
+	// preemptively encode (*)uint(64) when high bit set.
+	// depending upon which specific case, DefaultParameterConverter either errors or is incorrect (write negatives).
+	{
+		value := reflect.ValueOf(arg)
+		kind := value.Kind()
+		if kind == reflect.Ptr {
+			value, kind = value.Elem(), value.Elem().Kind() // unwrap pointer
+		}
+		if kind == reflect.Uint64 || kind == reflect.Uint {
+			if value.Uint() >= 1<<63 {
+				tmp := getTmpBuffer(w, 20)
+				_, err := w.Write(strconv.AppendUint(tmp, value.Uint(), 10))
+				return err
+			}
+		}
+	}
+
 	// Use sql.driver to convert the arg to a sql.Value which is simply
 	// an interface{} with a restricted set of types. This also takes
 	// care of using the sql.Valuer interface to convert arbitrary types
@@ -64,7 +81,11 @@ func encodeSQLValue(w io.Writer, arg interface{}) error {
 		// database/driver DefaultParameterConverter. Special handling.
 		value := reflect.ValueOf(arg)
 		if baseKinds[value.Kind()] {
-			return encodeSQLValue(w, asKind(value))
+			asKind := asKind(value)
+			if reflect.DeepEqual(arg, asKind) { // avoid infinite recursion with same arg
+				return fmt.Errorf("unsupported type %T: ConvertValue error: %w", arg, err)
+			}
+			return encodeSQLValue(w, asKind)
 		}
 		return err
 	}
