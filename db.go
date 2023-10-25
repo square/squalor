@@ -678,7 +678,7 @@ func (db *DB) Context() context.Context {
 // insertions. The most natural implementation would be something
 // like:
 //
-//   DELETE FROM <table> WHERE (<cols>...) IN ((<vals1>), (<vals2>), ...)
+//	DELETE FROM <table> WHERE (<cols>...) IN ((<vals1>), (<vals2>), ...)
 //
 // This works except that it is spectactularly slow if there is more
 // than one column in the primary key. MySQL changes this into a
@@ -688,7 +688,7 @@ func (db *DB) Context() context.Context {
 // Instead, we batch up deletions based on the first n-1 primary key
 // columns. For a two column primary key this looks like:
 //
-//   DELETE FROM <table> WHERE <cols1>=<val1> and <col2> IN (<val2>...)
+//	DELETE FROM <table> WHERE <cols1>=<val1> and <col2> IN (<val2>...)
 //
 // If you're deleting a batch of objects where the first primary key
 // column differs for each object this degrades to non-batched
@@ -711,8 +711,9 @@ func (db *DB) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 
 // ExecContext is the context version of Exec.
 func (db *DB) ExecContext(ctx context.Context, query interface{}, args ...interface{}) (sql.Result, error) {
-	ctx, finishTrace := db.addTracerToContext(ctx, opExec)
+	ctx, span, finishTrace := db.addTracerToContext(ctx, opExec)
 	defer finishTrace()
+
 	serializer, err := db.getSerializer(query)
 	if err != nil {
 		return nil, err
@@ -720,6 +721,9 @@ func (db *DB) ExecContext(ctx context.Context, query interface{}, args ...interf
 	queryStr, err := Serialize(serializer)
 	if err != nil {
 		return nil, err
+	}
+	if span != nil {
+		span.SetTag("db.statement", truncate(queryStr, MaxTracerStatementLength))
 	}
 
 	start := time.Now()
@@ -821,7 +825,7 @@ func rewriteQuery(ctx context.Context, db *DB, start time.Time, q string) (strin
 
 // QueryContext is the context version of Query.
 func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
-	ctx, finishTrace := db.addTracerToContext(ctx, opQuery)
+	ctx, span, finishTrace := db.addTracerToContext(ctx, opQuery)
 	defer finishTrace()
 	start := time.Now()
 
@@ -833,6 +837,10 @@ func (db *DB) QueryContext(ctx context.Context, q interface{}, args ...interface
 	if err != nil {
 		return nil, err
 	}
+	if span != nil {
+		span.SetTag("db.statement", truncate(queryStr, MaxTracerStatementLength))
+	}
+
 	queryStr, err = rewriteQuery(ctx, db, start, queryStr)
 	if err != nil {
 		return nil, err
@@ -858,7 +866,7 @@ func (db *DB) QueryRow(q interface{}, args ...interface{}) *Row {
 
 // QueryRowContext is the context version of QueryRow.
 func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) *Row {
-	ctx, finishTrace := db.addTracerToContext(ctx, opQueryRow)
+	ctx, span, finishTrace := db.addTracerToContext(ctx, opQueryRow)
 	defer finishTrace()
 	start := time.Now()
 
@@ -870,6 +878,10 @@ func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
+	if span != nil {
+		span.SetTag("db.statement", truncate(queryStr, MaxTracerStatementLength))
+	}
+
 	queryStr, err = rewriteQuery(ctx, db, start, queryStr)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
@@ -961,6 +973,9 @@ func (db *DB) UpsertContext(ctx context.Context, list ...interface{}) error {
 // Begin begins a transaction and returns a *squalor.Tx instead of a
 // *sql.Tx.
 func (db *DB) Begin() (*Tx, error) {
+	_, _, finishTrace := db.addTracerToContext(db.Context(), "begin")
+	defer finishTrace()
+
 	tx, err := begin(db)
 	if err != nil {
 		return nil, err
@@ -1017,6 +1032,9 @@ func (tx *Tx) AddPostCommitHook(post PostCommit) {
 // Commit is a wrapper around sql.Tx.Commit() which also provides pre- and post-
 // commit hooks.
 func (tx *Tx) Commit() error {
+	_, _, finishTrace := tx.DB.addTracerToContext(tx.Context(), "commit")
+	defer finishTrace()
+
 	for _, pre := range tx.preHooks {
 		if err := pre(tx); err != nil {
 			return err
@@ -1027,6 +1045,13 @@ func (tx *Tx) Commit() error {
 		post(err)
 	}
 	return err
+}
+
+func (tx *Tx) Rollback() error {
+	_, _, finishTrace := tx.DB.addTracerToContext(tx.Context(), "rollback")
+	defer finishTrace()
+
+	return tx.Tx.Rollback()
 }
 
 func (tx *Tx) WithContext(ctx context.Context) ExecutorContext {
@@ -1050,22 +1075,28 @@ func (tx *Tx) Exec(query interface{}, args ...interface{}) (sql.Result, error) {
 	return tx.ExecContext(tx.Context(), query, args...)
 }
 
+const MaxTracerStatementLength = 400
+
 // ExecContext executes a query using the provided context.
 func (tx *Tx) ExecContext(ctx context.Context, query interface{}, args ...interface{}) (sql.Result, error) {
-	ctx, finishTrace := tx.DB.addTracerToContext(ctx, opExec)
+	ctx, span, finishTrace := tx.DB.addTracerToContext(ctx, opExec)
 	defer finishTrace()
+
 	serializer, err := tx.DB.getSerializer(query)
 	if err != nil {
 		return nil, err
 	}
-	querystr, err := Serialize(serializer)
+	queryStr, err := Serialize(serializer)
 	if err != nil {
 		return nil, err
+	}
+	if span != nil {
+		span.SetTag("db.statement", truncate(queryStr, MaxTracerStatementLength))
 	}
 
 	start := time.Now()
 	argsConverted := argsConvert(args)
-	result, err := exec(ctx, tx.Tx, querystr, argsConverted...)
+	result, err := exec(ctx, tx.Tx, queryStr, argsConverted...)
 	tx.DB.logQuery(ctx, serializer, tx, start, err)
 
 	return result, err
@@ -1151,7 +1182,7 @@ func (tx *Tx) Query(q interface{}, args ...interface{}) (*Rows, error) {
 
 // QueryContext is the context version of Query.
 func (tx *Tx) QueryContext(ctx context.Context, q interface{}, args ...interface{}) (*Rows, error) {
-	ctx, finishTrace := tx.DB.addTracerToContext(ctx, opQuery)
+	ctx, _, finishTrace := tx.DB.addTracerToContext(ctx, opQuery)
 	defer finishTrace()
 	start := time.Now()
 
@@ -1188,7 +1219,7 @@ func (tx *Tx) QueryRow(q interface{}, args ...interface{}) *Row {
 
 // QueryRowContext is the context version of QueryRow.
 func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) *Row {
-	ctx, finishTrace := tx.DB.addTracerToContext(ctx, opQueryRow)
+	ctx, span, finishTrace := tx.DB.addTracerToContext(ctx, opQueryRow)
 	defer finishTrace()
 	start := time.Now()
 
@@ -1200,6 +1231,10 @@ func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interf
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
 	}
+	if span != nil {
+		span.SetTag("db.statement", truncate(queryStr, MaxTracerStatementLength))
+	}
+
 	queryStr, err = rewriteQuery(ctx, tx.DB, start, queryStr)
 	if err != nil {
 		return &Row{rows: Rows{Rows: nil, db: nil}, err: err}
@@ -1682,7 +1717,7 @@ func deleteModel(ctx context.Context, model *Model, exec Executor, list []interf
 }
 
 func deleteObjects(ctx context.Context, db *DB, exec Executor, list []interface{}) (int64, error) {
-	ctx, finishTrace := db.addTracerToContext(ctx, opDelete)
+	ctx, _, finishTrace := db.addTracerToContext(ctx, opDelete)
 	defer finishTrace()
 	objs, err := groupObjects(db, list)
 	if err != nil {
@@ -1702,7 +1737,7 @@ func deleteObjects(ctx context.Context, db *DB, exec Executor, list []interface{
 }
 
 func getObject(ctx context.Context, db *DB, exec Executor, obj interface{}, keys []interface{}) error {
-	ctx, finishTrace := db.addTracerToContext(ctx, opGet)
+	ctx, _, finishTrace := db.addTracerToContext(ctx, opGet)
 	defer finishTrace()
 	objT := reflect.TypeOf(obj)
 	if objT.Kind() != reflect.Ptr {
@@ -1862,7 +1897,7 @@ func insertModel(ctx context.Context, model *Model, exec Executor, getPlan func(
 }
 
 func insertObjects(ctx context.Context, db *DB, exec Executor, getPlan func(m *Model) insertPlan, list []interface{}, name operationName) error {
-	ctx, finishTrace := db.addTracerToContext(ctx, name)
+	ctx, _, finishTrace := db.addTracerToContext(ctx, name)
 	defer finishTrace()
 	objs, err := groupObjects(db, list)
 	if err != nil {
@@ -1878,7 +1913,7 @@ func insertObjects(ctx context.Context, db *DB, exec Executor, getPlan func(m *M
 }
 
 func selectObjects(ctx context.Context, db *DB, exec Executor, dest interface{}, query interface{}, args []interface{}) error {
-	ctx, finishTrace := db.addTracerToContext(ctx, opSelect)
+	ctx, _, finishTrace := db.addTracerToContext(ctx, opSelect)
 	defer finishTrace()
 	sliceValue := reflect.ValueOf(dest)
 	if sliceValue.Kind() != reflect.Ptr {
@@ -1987,7 +2022,7 @@ func updateModel(ctx context.Context, model *Model, exec Executor, list []interf
 }
 
 func updateObjects(ctx context.Context, db *DB, exec Executor, list []interface{}) (int64, error) {
-	ctx, finishTrace := db.addTracerToContext(ctx, opUpdate)
+	ctx, _, finishTrace := db.addTracerToContext(ctx, opUpdate)
 	defer finishTrace()
 	objs, err := groupObjects(db, list)
 	if err != nil {
@@ -2010,16 +2045,16 @@ func updateObjects(ctx context.Context, db *DB, exec Executor, list []interface{
 // finishing the trace would finish the traced span, so code should call finish as soon as the
 // operations complete:
 //
-// 	func execWithTracer(ctx context.Context) {
-// 		ctx, finishTracer := addTracerToContext(ctx, "exec")
-// 		defer finishTracer()
-// 		return exec(ctx)
-// 	}
-func (db *DB) addTracerToContext(ctx context.Context, name operationName) (tracedCtx context.Context, finishTrace func()) {
+//	func execWithTracer(ctx context.Context) {
+//		ctx, span, finishTracer := addTracerToContext(ctx, "exec")
+//		defer finishTracer()
+//		return exec(ctx)
+//	}
+func (db *DB) addTracerToContext(ctx context.Context, name operationName) (tracedCtx context.Context, span opentracing.Span, finishTrace func()) {
 	if db.OpentracingEnabled {
-		span, tracedCtx := opentracing.StartSpanFromContext(ctx, string(name))
-		return tracedCtx, span.Finish
+		span, tracedCtx = opentracing.StartSpanFromContext(ctx, string(name))
+		return tracedCtx, span, span.Finish
 	}
 
-	return ctx, func() {}
+	return ctx, nil, func() {}
 }

@@ -36,3 +36,42 @@ func TestRecoveryToError(t *testing.T) {
 		t.Fatalf("Expected: %v, got %v", expectedErr, err)
 	}
 }
+
+func TestTruncate(t *testing.T) {
+	testCases := []struct {
+		input, expected string
+		n               int
+	}{
+		{
+			"😀😎🌎😀😎🌎", "😀😎🌎😀😎🌎", 7,
+		},
+		{
+			"😀😎🌎😀😎🌎", "😀😎🌎😀😎🌎", 6,
+		},
+		{
+			"😀😎🌎😀😎🌎", "😀😎🌎😀…", 5,
+		},
+		{
+			"😀😎🌎😀😎🌎", "😀😎🌎…", 4,
+		},
+		{
+			"😀😎🌎😀😎🌎", "😀😎…", 3,
+		},
+		{
+			"😀😎🌎😀😎🌎", "😀…", 2,
+		},
+		{
+			"😀😎🌎😀😎🌎", "…", 1,
+		},
+		{
+			"😀😎🌎😀😎🌎", "", 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		actual := truncate(tc.input, tc.n)
+		if actual != tc.expected {
+			t.Fatalf("Expected %q got %q (n=%d)", tc.expected, actual, tc.n)
+		}
+	}
+}
