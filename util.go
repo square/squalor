@@ -33,7 +33,7 @@ func recoveryToError(r interface{}) error {
 
 // Rune-based string truncation with ellipsis with reasonable support for multibyte characters.
 func truncate(s string, n int) string {
-	if n == 0 {
+	if n <= 0 {
 		return ""
 	}
 	if len(s) < n {
