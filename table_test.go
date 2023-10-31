@@ -50,10 +50,10 @@ func TestLoadTableNameInjection(t *testing.T) {
 		t.Fatalf("Expected error %q from injection attempt, got nil", expectedError)
 	}
 
-	// Use strings.ToLower in order to prevent error message discrepancies
+	// Use strings.EqualFold in order to prevent error message discrepancies
 	// between running tests locally through integration_test.sh and the
 	// build running through CI.
-	if strings.EqualFold(expectedError) {
+	if !strings.EqualFold(expectedError, err.Error()) {
 		t.Fatalf("Expected error %q from injection attempt, got %q", expectedError, err.Error())
 	}
 
