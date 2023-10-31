@@ -15,6 +15,7 @@
 package squalor
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -27,7 +28,6 @@ import (
 	"time"
 
 	"github.com/coopernurse/gorp"
-	"golang.org/x/net/context"
 )
 
 const objectsDDL = `

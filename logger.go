@@ -15,10 +15,9 @@
 package squalor
 
 import (
+	"context"
 	"log"
 	"time"
-
-	"golang.org/x/net/context"
 )
 
 // QueryLogger defines an interface for query loggers.

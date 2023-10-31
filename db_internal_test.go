@@ -15,13 +15,12 @@
 package squalor
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"reflect"
 	"testing"
-
-	"golang.org/x/net/context"
 )
 
 // singleCol has a primary key composed of a single column. See
