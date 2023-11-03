@@ -2097,8 +2097,12 @@ func (db *DB) addTracerToContext(ctx context.Context, name operationName) (trace
 		span, tracedCtx = opentracing.StartSpanFromContext(ctx, string(name))
 		return tracedCtx, span, func(errPtr *error) {
 			if errPtr != nil {
-				ext.Error.Set(span, true)
-				span.LogFields(otlog.Error(*errPtr))
+				err := *errPtr
+				// An interface equals nil only if both type and value are nil
+				if err != nil && (reflect.ValueOf(err).Kind() != reflect.Ptr || !reflect.ValueOf(err).IsNil()) {
+					ext.Error.Set(span, true)
+					span.LogFields(otlog.Error(err))
+				}
 			}
 			span.Finish()
 		}
