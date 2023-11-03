@@ -870,9 +870,7 @@ func (db *DB) QueryRow(q interface{}, args ...interface{}) *Row {
 func (db *DB) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) (row *Row) {
 	ctx, span, finishTrace := db.addTracerToContext(ctx, "squalor."+opQueryRow)
 	defer func() {
-		if row.err != nil {
-			finishTrace(&row.err)
-		}
+		finishTrace(&row.err)
 	}()
 	start := time.Now()
 
@@ -1251,9 +1249,7 @@ func (tx *Tx) QueryRow(q interface{}, args ...interface{}) *Row {
 func (tx *Tx) QueryRowContext(ctx context.Context, q interface{}, args ...interface{}) (row *Row) {
 	ctx, span, finishTrace := tx.DB.addTracerToContext(ctx, "squalor."+opQueryRow)
 	defer func() {
-		if row.err != nil {
-			finishTrace(&row.err)
-		}
+		finishTrace(&row.err)
 	}()
 	start := time.Now()
 
