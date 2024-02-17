@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"github.com/coopernurse/gorp"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/mocktracer"
 )
 
 const objectsDDL = `
@@ -1551,6 +1553,46 @@ func TestInsertContextValue(t *testing.T) {
 
 	if logger.count != 1 {
 		t.Fatal("Expected one call to TestLogger.Log")
+	}
+}
+
+func TestOpenTracingIntegration(t *testing.T) {
+	origTracer := opentracing.GlobalTracer()
+	tracer := mocktracer.New()
+	opentracing.SetGlobalTracer(tracer)
+	defer opentracing.SetGlobalTracer(origTracer)
+
+	dbOptions := []DBOption{
+		SetOpentracingEnabled(true),
+		SetStartSpanOptions(opentracing.Tag{Key: "service.name", Value: "my-service"}, opentracing.Tag{Key: "resource.name", Value: "my-resource"}),
+	}
+	db := makeTestDBWithOptions(t, dbOptions, usersDDL)
+	defer db.Close()
+	if _, err := db.BindModel("users", User{}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.WithValue(context.Background(), "user_id", "123")
+
+	if err := db.InsertContext(ctx, &User{Name: "foo"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(tracer.FinishedSpans()) != 2 {
+		t.Fatal("Expected 2 opentracing spans", tracer.FinishedSpans())
+	}
+	serviceVal, serviceOk := tracer.FinishedSpans()[0].Tags()["service.name"]
+	if !serviceOk {
+		t.Fatal("Expected service.name span tag", tracer.FinishedSpans()[0].Tags())
+	}
+	if serviceVal != "my-service" {
+		t.Fatal("Expected 'service.name' tag value to be 'my-service'", serviceVal)
+	}
+	resourceVal, resourceOk := tracer.FinishedSpans()[0].Tags()["resource.name"]
+	if !resourceOk {
+		t.Fatal("Expected resource.name span tag", tracer.FinishedSpans()[0].Tags())
+	}
+	if resourceVal != "my-resource" {
+		t.Fatal("Expected 'resource.name' tag value to be 'my-resource'", resourceVal)
 	}
 }
 
