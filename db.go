@@ -390,10 +390,12 @@ type DB struct {
 	//
 	// The default is false, tracers should be registered by the callers.
 	OpentracingEnabled bool
-	context            context.Context
-	mu                 *sync.RWMutex // pointer, so copies in WithContext() behave properly.
-	models             map[reflect.Type]*Model
-	mappings           map[reflect.Type]fieldMap
+	// Span option functions are applied to every span started by squalor, when OpentracingEnabled is true.
+	spanOptions []opentracing.StartSpanOption
+	context     context.Context
+	mu          *sync.RWMutex // pointer, so copies in WithContext() behave properly.
+	models      map[reflect.Type]*Model
+	mappings    map[reflect.Type]fieldMap
 
 	// Function to add a deadline to a query.
 	deadlineQueryRewriter func(db *DB, query string, deadline time.Duration) (queryWithDeadline string)
@@ -502,6 +504,16 @@ func SetOpentracingEnabled(enabled bool) DBOption {
 	}
 }
 
+// SetStartSpanOptions will apply the span option functions to every opentracing span created by squalor
+func SetStartSpanOptions(spanOptions ...opentracing.StartSpanOption) DBOption {
+	return func(db *DB) error {
+		for _, spanOption := range spanOptions {
+			db.spanOptions = append(db.spanOptions, spanOption)
+		}
+		return nil
+	}
+}
+
 // NewDB creates a new DB from an sql.DB. Zero or more DBOptions may be passed in and will
 // be processed in order.
 func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
@@ -513,6 +525,7 @@ func NewDB(db *sql.DB, options ...DBOption) (*DB, error) {
 		IgnoreMissingCols:     false,
 		Logger:                nil,
 		OpentracingEnabled:    false,
+		spanOptions:           nil,
 		context:               context.Background(),
 		deadlineQueryRewriter: noopDeadlineQueryRewriter,
 		models:                map[reflect.Type]*Model{},
@@ -2090,7 +2103,7 @@ func updateObjects(ctx context.Context, db *DB, exec Executor, list []interface{
 // The function has no effect if db.OpentracingEnabled is false.
 func (db *DB) addTracerToContext(ctx context.Context, name operationName) (tracedCtx context.Context, span opentracing.Span, finishTrace func(errPtr *error)) {
 	if db.OpentracingEnabled {
-		span, tracedCtx = opentracing.StartSpanFromContext(ctx, string(name))
+		span, tracedCtx = opentracing.StartSpanFromContext(ctx, string(name), db.spanOptions...)
 		return tracedCtx, span, func(errPtr *error) {
 			if errPtr != nil {
 				err := *errPtr
