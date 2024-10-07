@@ -1211,6 +1211,16 @@ func TestWithMySql57Deadline(t *testing.T) {
 		!strings.HasSuffix(logger.lastQuery, ") */ * from objects LIMIT 1") {
 		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) */ * from objects LIMIT 1", logger.lastQuery)
 	}
+
+	// Test query that already has an optimizer hint
+	logger.lastQuery = ""
+
+	db.QueryRow(`SELECT /*+ NO_RANGE_OPTIMIZATION(objects) */ * from objects LIMIT 1`)
+
+	if !strings.HasPrefix(logger.lastQuery, "SELECT /*+ MAX_EXECUTION_TIME(") ||
+		!strings.HasSuffix(logger.lastQuery, ") NO_RANGE_OPTIMIZATION(objects) */ * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "SELECT /*+ MAX_EXECUTION_TIME(9999) NO_RANGE_OPTIMIZATION(objects) */ * from objects LIMIT 1", logger.lastQuery)
+	}
 }
 
 func TestWithMySql57DefaultDeadline(t *testing.T) {
