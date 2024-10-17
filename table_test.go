@@ -45,7 +45,7 @@ func TestLoadTableNameInjection(t *testing.T) {
 	if table != nil {
 		t.Fatalf("Expected nil table returned from injection attempt, got %v", table)
 	}
-	expectedError := "Error 1146: Table 'squalor_test.objects where false' doesn't exist"
+	expectedError := "Error 1146 (42S02): Table 'squalor_test.objects where false' doesn't exist"
 	if err == nil {
 		t.Fatalf("Expected error %q from injection attempt, got nil", expectedError)
 	}
@@ -62,7 +62,7 @@ func TestLoadTableNameInjection(t *testing.T) {
 	if table != nil {
 		t.Fatalf("Expected nil table returned from injection attempt, got %v", table)
 	}
-	expectedError = "Error 1146: Table 'squalor_test.foo`;bar' doesn't exist"
+	expectedError = "Error 1146 (42S02): Table 'squalor_test.foo`;bar' doesn't exist"
 	if err == nil {
 		t.Fatalf("Expected error %q from injection attempt, got nil", expectedError)
 	}
