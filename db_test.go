@@ -1079,16 +1079,15 @@ func TestTransactionBlockFailsOnDuplicatePrimaryKeyUpdate(t *testing.T) {
 		t.Fatal(err.Error())
 	}
 
-	expectedErrorPrefix := fmt.Sprintf("Error 1062 (23000): Duplicate entry '%v' for key", u2.ID)
+	expectedError := fmt.Sprintf("Error 1062 (23000): Duplicate entry '%v' for key 'users.PRIMARY'", u2.ID)
 
 	if err := db.Transaction(func(tx *Tx) error {
 		_, err := db.Exec(fmt.Sprintf("UPDATE `users` SET id = %v WHERE `id` = %v", u2.ID, u1.ID))
 
 		return err
-	}); err == nil || strings.Index(err.Error(), expectedErrorPrefix) == -1 {
-		t.Fatalf("Expected %v error prefix, got: %v", expectedErrorPrefix, err)
+	}); err == nil || err.Error() != expectedError {
+		t.Fatalf("Expected %v error, got: %v", expectedError, err)
 	}
-
 }
 
 func TestTransactionBlockRecoversFromPanic(t *testing.T) {
