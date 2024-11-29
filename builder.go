@@ -453,6 +453,16 @@ func (b *SelectBuilder) ForUpdate() *SelectBuilder {
 	return b
 }
 
+func (b *SelectBuilder) ForUpdateNoWait() *SelectBuilder {
+	b.Select.Lock = " FOR UPDATE NOWAIT"
+	return b
+}
+
+func (b *SelectBuilder) ForUpdateSkipLocked() *SelectBuilder {
+	b.Select.Lock = " FOR UPDATE SKIP LOCKED"
+	return b
+}
+
 // WithSharedLock sets the LOCK IN SHARE MODE tag on the statement
 // causing the result rows to be read locked (dependent on the
 // specific MySQL storage engine).
