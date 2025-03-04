@@ -1827,13 +1827,15 @@ const versionedUsersDDL = `
 CREATE TABLE users (
   id   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
-  ver  INT NOT NULL
+  ver  INT NOT NULL,
+  created_at BIGINT NOT NULL
 )`
 
 type VersionedUser struct {
-	ID      uint64 `db:"id"`
-	Name    string `db:"name"`
-	Version int    `db:"ver,optlock"`
+	ID        uint64 `db:"id"`
+	Name      string `db:"name"`
+	Version   int    `db:"ver,optlock"`
+	CreatedAt int64  `db:"created_at,noupdate"`
 }
 
 func TestVersionedUser_base(t *testing.T) {
@@ -1844,9 +1846,11 @@ func TestVersionedUser_base(t *testing.T) {
 	}
 
 	// Insert
+	createdAt := time.Date(2022, time.January, 1, 0, 0, 0, 0, time.UTC)
 	u := &VersionedUser{
-		Name:    "foo",
-		Version: 1,
+		Name:      "foo",
+		Version:   1,
+		CreatedAt: createdAt.UnixMilli(),
 	}
 	if err := db.Insert(u); err != nil {
 		t.Fatal(err)
@@ -1854,6 +1858,7 @@ func TestVersionedUser_base(t *testing.T) {
 
 	// Update
 	u.Name = "bar"
+	u.CreatedAt = createdAt.Add(time.Hour).UnixMilli()
 	if count, err := db.Update(u); err != nil {
 		t.Fatal(err)
 	} else if count != 1 {
@@ -1873,6 +1878,9 @@ func TestVersionedUser_base(t *testing.T) {
 	}
 	if stored.Version != 2 {
 		t.Fatalf("expected stored version %d, was at version %d", 2, stored.Version)
+	}
+	if stored.CreatedAt != createdAt.UnixMilli() {
+		t.Fatalf("expected stored created_at %d, was at created_at %d", createdAt.UnixMilli(), stored.CreatedAt)
 	}
 }
 
