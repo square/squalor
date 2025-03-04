@@ -245,7 +245,7 @@ func makeUpdatePlan(m *Model) updatePlan {
 
 	var setColumns []string
 	for _, col := range m.mappedColumns {
-		if col.AutoIncr || primaryKey[col.Name] {
+		if col.AutoIncr || primaryKey[col.Name] || m.fields[col.Name].noupdate {
 			continue
 		}
 		setColumns = append(setColumns, col.Name)

@@ -158,25 +158,31 @@ func TestMapping(t *testing.T) {
 
 func TestReadTag(t *testing.T) {
 	testCases := []struct {
-		tag     string
-		name    string
-		optlock bool
+		tag      string
+		name     string
+		optlock  bool
+		noupdate bool
 	}{
-		{"-", "-", false},
-		{"foo", "foo", false},
-		{"foo,", "foo", false},
-		{"foo,optlock", "foo", true},
-		{",optlock", "", true},
-		{",wrong", "", false},
-		{",", "", false},
+		{"-", "-", false, false},
+		{"foo", "foo", false, false},
+		{"foo,", "foo", false, false},
+		{"foo,optlock", "foo", true, false},
+		{",optlock", "", true, false},
+		{",wrong", "", false, false},
+		{",noupdate", "", false, true},
+		{",optlock,noupdate", "", true, true},
+		{",", "", false, false},
 	}
 	for _, c := range testCases {
-		name, optlock := readTag(c.tag)
+		name, optlock, noupdate := readTag(c.tag)
 		if name != c.name {
 			t.Errorf("%s: expected name '%s', actual '%s'", c.tag, c.name, name)
 		}
 		if optlock != c.optlock {
 			t.Errorf("%s: expected optlock '%t', actual '%t'", c.tag, c.optlock, optlock)
+		}
+		if noupdate != c.noupdate {
+			t.Errorf("%s: expected noupdate '%t', actual '%t'", c.tag, c.noupdate, noupdate)
 		}
 	}
 }
