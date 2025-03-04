@@ -1118,6 +1118,7 @@ func G(list ...interface{}) ValExprBuilder {
 var identifierRE = regexp.MustCompile("^[a-zA-Z_]\\w*$")
 
 // Returns true if the given string is suitable as an identifier.
+// --no-op change to trigger diff--
 func isValidIdentifier(name string) bool {
 	return identifierRE.MatchString(name)
 }
