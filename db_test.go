@@ -1376,6 +1376,15 @@ func TestWithVitessDeadline(t *testing.T) {
 	if strings.Contains(logger.lastQuery, "QUERY_TIMEOUT_MS") {
 		t.Fatalf("Expected INSERT query to not be rewritten, got %q", logger.lastQuery)
 	}
+
+	// Test query that already has QUERY_TIMEOUT_MS is not rewritten
+	logger.lastQuery = ""
+
+	db.QueryRow("/*vt+ QUERY_TIMEOUT_MS=500 */ SELECT * from objects LIMIT 1")
+
+	if logger.lastQuery != "/*vt+ QUERY_TIMEOUT_MS=500 */ SELECT * from objects LIMIT 1" {
+		t.Fatalf("Expected existing QUERY_TIMEOUT_MS to be preserved, got %q", logger.lastQuery)
+	}
 }
 
 func TestWithVitessDefaultDeadline(t *testing.T) {

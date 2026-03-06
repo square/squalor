@@ -572,6 +572,9 @@ func mySql57DeadlineQueryRewriter(db *DB, query string, deadline time.Duration) 
 
 func vitessDeadlineQueryRewriter(db *DB, query string, deadline time.Duration) (queryWithDeadline string) {
 	if deadline.Milliseconds() > 0 && (strings.HasPrefix(query, "SELECT ") || strings.HasPrefix(query, "(SELECT ")) {
+		if strings.Contains(strings.ToUpper(query), "QUERY_TIMEOUT_MS") {
+			return query
+		}
 		return fmt.Sprintf("/*vt+ QUERY_TIMEOUT_MS=%d */ %s", deadline.Milliseconds(), query)
 	}
 	return query
