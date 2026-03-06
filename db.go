@@ -429,6 +429,14 @@ func QueryDeadlineMySQL57(db *DB) error {
 	return nil
 }
 
+// When passed as an option to NewDB(), enables query deadlines on Vitess.
+// Query deadlines only affect SELECT queries run via the Executor.Query function.
+// It is up to Vitess to enforce the deadline via the QUERY_TIMEOUT_MS comment directive.
+func QueryDeadlineVitess(db *DB) error {
+	db.deadlineQueryRewriter = vitessDeadlineQueryRewriter
+	return nil
+}
+
 // When passed as an option to NewDB(), enables query deadlines on MySql 5.7.4 or later.
 // Query deadlines only affect SELECT queries run via the Executor.Query function.
 // It us up to the underlying database engine to enforce the deadline.
@@ -558,6 +566,16 @@ func mySql57DeadlineQueryRewriter(db *DB, query string, deadline time.Duration) 
 		} else {
 			return strings.Replace(query, "SELECT ", fmt.Sprintf("SELECT /*+ MAX_EXECUTION_TIME(%d) */ ", deadline.Milliseconds()), 1)
 		}
+	}
+	return query
+}
+
+func vitessDeadlineQueryRewriter(db *DB, query string, deadline time.Duration) (queryWithDeadline string) {
+	if deadline.Milliseconds() > 0 && (strings.HasPrefix(query, "SELECT ") || strings.HasPrefix(query, "(SELECT ")) {
+		if strings.Contains(strings.ToUpper(query), "QUERY_TIMEOUT_MS") {
+			return query
+		}
+		return fmt.Sprintf("/*vt+ QUERY_TIMEOUT_MS=%d */ %s", deadline.Milliseconds(), query)
 	}
 	return query
 }
