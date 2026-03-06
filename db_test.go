@@ -1262,6 +1262,161 @@ func TestWithMySql57DefaultDeadline(t *testing.T) {
 	}
 }
 
+func TestWithVitessDeadline(t *testing.T) {
+	logger := &TestLogger{}
+	db := makeTestDBWithOptions(t, []DBOption{QueryDeadlineVitess, SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	now := time.Now()
+	later := now.Add(time.Duration(10 * time.Second))
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "user_id", "123")
+
+	var cancel func()
+	ctx, cancel = context.WithDeadline(ctx, later)
+	defer cancel()
+
+	db = db.WithContext(ctx).(*DB)
+	if dbDeadline, _ := db.Context().Deadline(); dbDeadline != later {
+		t.Fatalf("Expected db.GetContext.Deadline() to return %v, got %v", later, dbDeadline)
+	}
+
+	// Test tx.Query
+	logger.lastQuery = ""
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txDeadline, _ := tx.Context().Deadline(); txDeadline != later {
+		t.Fatalf("Expected tx.GetContext.Deadline() to return %v, got %v", later, txDeadline)
+	}
+
+	tx.Query("SELECT * from objects")
+
+	if !strings.HasPrefix(logger.lastQuery, "/*vt+ QUERY_TIMEOUT_MS=") ||
+		!strings.HasSuffix(logger.lastQuery, " */ SELECT * from objects") {
+		t.Fatalf("Expected %q, got %q", "/*vt+ QUERY_TIMEOUT_MS=9999 */ SELECT * from objects", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test db.Query
+	logger.lastQuery = ""
+
+	db.Query("SELECT * from objects")
+	if !strings.HasPrefix(logger.lastQuery, "/*vt+ QUERY_TIMEOUT_MS=") ||
+		!strings.HasSuffix(logger.lastQuery, " */ SELECT * from objects") {
+		t.Fatalf("Expected %q, got %q", "/*vt+ QUERY_TIMEOUT_MS=9999 */ SELECT * from objects", logger.lastQuery)
+	}
+
+	// Test tx.QueryRow
+	logger.lastQuery = ""
+
+	tx, err = db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txDeadline, _ := tx.Context().Deadline(); txDeadline != later {
+		t.Fatalf("Expected tx.GetContext.Deadline() to return %v, got %v", later, txDeadline)
+	}
+
+	tx.QueryRow("SELECT * from objects LIMIT 1")
+
+	if !strings.HasPrefix(logger.lastQuery, "/*vt+ QUERY_TIMEOUT_MS=") ||
+		!strings.HasSuffix(logger.lastQuery, " */ SELECT * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "/*vt+ QUERY_TIMEOUT_MS=9999 */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test db.QueryRow
+	logger.lastQuery = ""
+
+	db.QueryRow("SELECT * from objects LIMIT 1")
+
+	if !strings.HasPrefix(logger.lastQuery, "/*vt+ QUERY_TIMEOUT_MS=") ||
+		!strings.HasSuffix(logger.lastQuery, " */ SELECT * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "/*vt+ QUERY_TIMEOUT_MS=9999 */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	}
+
+	// Test nested queries
+	logger.lastQuery = ""
+
+	db.QueryRow("(SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)")
+
+	if !strings.HasPrefix(logger.lastQuery, "/*vt+ QUERY_TIMEOUT_MS=") ||
+		!strings.HasSuffix(logger.lastQuery, " */ (SELECT * FROM objects ORDER BY ID ASC LIMIT 1) UNION (SELECT * FROM objects ORDER BY id DESC LIMIT 1)") {
+		t.Fatalf("Expected %q, got %q", "/*vt+ QUERY_TIMEOUT_MS=9999 */ (SELECT ...) UNION ...", logger.lastQuery)
+	}
+
+	// Test with white space
+	logger.lastQuery = ""
+
+	db.QueryRow(`
+     SELECT * from objects LIMIT 1`)
+
+	if !strings.HasPrefix(logger.lastQuery, "/*vt+ QUERY_TIMEOUT_MS=") ||
+		!strings.HasSuffix(logger.lastQuery, " */ SELECT * from objects LIMIT 1") {
+		t.Fatalf("Expected %q, got %q", "/*vt+ QUERY_TIMEOUT_MS=9999 */ SELECT * from objects LIMIT 1", logger.lastQuery)
+	}
+
+	// Test non-SELECT query is not rewritten
+	logger.lastQuery = ""
+
+	db.Exec("INSERT INTO users (name) VALUES ('test')")
+
+	if strings.Contains(logger.lastQuery, "QUERY_TIMEOUT_MS") {
+		t.Fatalf("Expected INSERT query to not be rewritten, got %q", logger.lastQuery)
+	}
+}
+
+func TestWithVitessDefaultDeadline(t *testing.T) {
+	logger := &TestLogger{}
+	db := makeTestDBWithOptions(t, []DBOption{QueryDeadlineVitess, QueryDeadlineDefault(time.Minute), SetQueryLogger(logger)}, usersDDL)
+	defer db.Close()
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "user_id", "123")
+
+	db = db.WithContext(ctx).(*DB)
+
+	logger.lastQuery = ""
+
+	db.Query("SELECT * from objects")
+	if logger.lastQuery != "/*vt+ QUERY_TIMEOUT_MS=60000 */ SELECT * from objects" {
+		t.Fatalf("Expected %q, got %q", "/*vt+ QUERY_TIMEOUT_MS=60000 */ SELECT * from objects", logger.lastQuery)
+	}
+
+	var cancel func()
+	ctx, cancel = context.WithDeadline(ctx, time.Now().Add(10*time.Second))
+	defer cancel()
+
+	db = db.WithContext(ctx).(*DB)
+
+	logger.lastQuery = ""
+
+	db.Query("SELECT * from objects")
+	if !strings.HasPrefix(logger.lastQuery, "/*vt+ QUERY_TIMEOUT_MS=") ||
+		!strings.HasSuffix(logger.lastQuery, " */ SELECT * from objects") {
+		t.Fatalf("Expected %q, got %q", "/*vt+ QUERY_TIMEOUT_MS=9999 */ SELECT * from objects", logger.lastQuery)
+	}
+
+	lParen := strings.Index(logger.lastQuery, "=")
+	rParen := strings.Index(logger.lastQuery, " */")
+	millis, _ := strconv.Atoi(logger.lastQuery[lParen+1 : rParen])
+	if millis > 10000 {
+		t.Fatalf("Expected deadline <= 10000, got %d", millis)
+	}
+}
+
 func TestWithoutDeadline(t *testing.T) {
 	logger := &TestLogger{}
 	db := makeTestDBWithOptions(t, []DBOption{SetQueryLogger(logger)}, usersDDL)
