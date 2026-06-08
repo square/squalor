@@ -162,11 +162,11 @@ func makeInsertPlan(m *Model, replace bool, insertIgnore bool) insertPlan {
 	var columns []interface{}
 	for _, col := range m.mappedColumns {
 		columns = append(columns, m.Table.C(col.Name))
-		if col.AutoIncr {
-			f, ok := m.fields[col.Name]
-			if !ok {
-				panic(fmt.Errorf("%s: unable to find field %s", m.Name, col))
-			}
+		f, ok := m.fields[col.Name]
+		if !ok {
+			panic(fmt.Errorf("%s: unable to find field %s", m.Name, col))
+		}
+		if col.AutoIncr || f.autoID {
 			p.autoIncr = f.Index
 			switch f.Type.Kind() {
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -204,7 +204,7 @@ func makeUpsertPlan(m *Model) insertPlan {
 		primaryKey[col.Name] = true
 	}
 	for _, col := range m.mappedColumns {
-		if col.AutoIncr || primaryKey[col.Name] {
+		if col.AutoIncr || m.fields[col.Name].autoID || primaryKey[col.Name] {
 			continue
 		}
 		p.insertBuilder.OnDupKeyUpdateColumn(col.Name)
@@ -245,7 +245,7 @@ func makeUpdatePlan(m *Model) updatePlan {
 
 	var setColumns []string
 	for _, col := range m.mappedColumns {
-		if col.AutoIncr || primaryKey[col.Name] || m.fields[col.Name].noupdate {
+		if col.AutoIncr || primaryKey[col.Name] || m.fields[col.Name].noupdate || m.fields[col.Name].autoID {
 			continue
 		}
 		setColumns = append(setColumns, col.Name)
