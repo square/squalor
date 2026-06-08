@@ -30,6 +30,11 @@ type singleCol struct {
 	B int `db:"b"`
 }
 
+type singleColAutoID struct {
+	A int `db:"a,auto_id"`
+	B int `db:"b"`
+}
+
 // multiCol has a primary key composed of multiple columns. See
 // newTestStatementsDB.
 type multiCol struct {
@@ -62,6 +67,12 @@ func newTestStatementsDB(t *testing.T) *DB {
 		{
 			"single",
 			singleCol{},
+			1,
+			nil,
+		},
+		{
+			"single_auto_id",
+			singleColAutoID{},
 			1,
 			nil,
 		},
@@ -113,10 +124,11 @@ func newTestStatementsDB(t *testing.T) *DB {
 }
 
 type dummyResult struct {
+	lastInsertID int64
 }
 
 func (r dummyResult) LastInsertId() (int64, error) {
-	return 0, nil
+	return r.lastInsertID, nil
 }
 
 func (r dummyResult) RowsAffected() (int64, error) {
@@ -125,8 +137,9 @@ func (r dummyResult) RowsAffected() (int64, error) {
 
 type recordingExecutor struct {
 	*DB
-	exec  []string
-	query []string
+	exec         []string
+	query        []string
+	lastInsertID int64
 }
 
 func (r *recordingExecutor) Exec(stmt interface{}, args ...interface{}) (sql.Result, error) {
@@ -155,7 +168,7 @@ func (r *recordingExecutor) ExecContext(_ context.Context, stmt interface{}, arg
 	}
 
 	r.exec = append(r.exec, querystr)
-	return dummyResult{}, nil
+	return dummyResult{lastInsertID: r.lastInsertID}, nil
 }
 
 func (r *recordingExecutor) QueryRow(query interface{}, args ...interface{}) *Row {
@@ -412,6 +425,25 @@ func TestDBInsertStatements(t *testing.T) {
 		if !reflect.DeepEqual([]string{c.expected}, recorder.exec) {
 			t.Errorf("Expected %+v, but got %+v", c.expected, recorder.exec)
 		}
+	}
+}
+
+func TestDBInsertAutoIDPopulatesID(t *testing.T) {
+	db := newTestStatementsDB(t)
+	recorder := &recordingExecutor{
+		DB:           db,
+		lastInsertID: 42,
+	}
+	obj := &singleColAutoID{B: 1}
+	model, err := db.getModel(deref(reflect.TypeOf(obj)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertModel(context.Background(), model, recorder, getInsert, []interface{}{obj}); err != nil {
+		t.Fatal(err)
+	}
+	if obj.A != 42 {
+		t.Fatalf("Expected auto_id field to be populated with 42, but got %d", obj.A)
 	}
 }
 

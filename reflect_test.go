@@ -162,19 +162,21 @@ func TestReadTag(t *testing.T) {
 		name     string
 		optlock  bool
 		noupdate bool
+		autoID   bool
 	}{
-		{"-", "-", false, false},
-		{"foo", "foo", false, false},
-		{"foo,", "foo", false, false},
-		{"foo,optlock", "foo", true, false},
-		{",optlock", "", true, false},
-		{",wrong", "", false, false},
-		{",noupdate", "", false, true},
-		{",optlock,noupdate", "", true, true},
-		{",", "", false, false},
+		{"-", "-", false, false, false},
+		{"foo", "foo", false, false, false},
+		{"foo,", "foo", false, false, false},
+		{"foo,optlock", "foo", true, false, false},
+		{",optlock", "", true, false, false},
+		{",wrong", "", false, false, false},
+		{",noupdate", "", false, true, false},
+		{",auto_id", "", false, false, true},
+		{",optlock,noupdate,auto_id", "", true, true, true},
+		{",", "", false, false, false},
 	}
 	for _, c := range testCases {
-		name, optlock, noupdate := readTag(c.tag)
+		name, optlock, noupdate, autoID := readTag(c.tag)
 		if name != c.name {
 			t.Errorf("%s: expected name '%s', actual '%s'", c.tag, c.name, name)
 		}
@@ -183,6 +185,9 @@ func TestReadTag(t *testing.T) {
 		}
 		if noupdate != c.noupdate {
 			t.Errorf("%s: expected noupdate '%t', actual '%t'", c.tag, c.noupdate, noupdate)
+		}
+		if autoID != c.autoID {
+			t.Errorf("%s: expected autoID '%t', actual '%t'", c.tag, c.autoID, autoID)
 		}
 	}
 }

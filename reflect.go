@@ -24,6 +24,7 @@ type fieldDesc struct {
 	reflect.StructField
 	optlock  bool
 	noupdate bool
+	autoID   bool
 }
 
 type fieldMap map[string]fieldDesc
@@ -32,6 +33,7 @@ const (
 	tagName        = "db"
 	tagSubOptlock  = "optlock"
 	tagSubNoUpdate = "noupdate"
+	tagSubAutoID   = "auto_id"
 )
 
 // getMapping returns a mapping for the type t, using the tagName and
@@ -54,7 +56,7 @@ func getMapping(t reflect.Type, mapFunc func(string) string) fieldMap {
 		for fieldPos := 0; fieldPos < tq.t.NumField(); fieldPos++ {
 			f := tq.t.Field(fieldPos)
 
-			name, optlock, noupdate := readTag(f.Tag.Get(tagName))
+			name, optlock, noupdate, autoID := readTag(f.Tag.Get(tagName))
 
 			// Breadth first search of untagged anonymous embedded structs.
 			if f.Anonymous && f.Type.Kind() == reflect.Struct && name == "" {
@@ -88,13 +90,13 @@ func getMapping(t reflect.Type, mapFunc func(string) string) fieldMap {
 			// Add it to the map at the current position.
 			sf := f
 			sf.Index = appendIndex(tq.p, fieldPos)
-			m[name] = fieldDesc{sf, optlock, noupdate}
+			m[name] = fieldDesc{sf, optlock, noupdate, autoID}
 		}
 	}
 	return m
 }
 
-func readTag(tag string) (name string, optLock bool, noUpdate bool) {
+func readTag(tag string) (name string, optLock bool, noUpdate bool, autoID bool) {
 	values := strings.Split(tag, ",")
 	name = values[0]
 	if len(values) > 1 {
@@ -104,10 +106,12 @@ func readTag(tag string) (name string, optLock bool, noUpdate bool) {
 				optLock = true
 			case tagSubNoUpdate:
 				noUpdate = true
+			case tagSubAutoID:
+				autoID = true
 			}
 		}
 	}
-	return name, optLock, noUpdate
+	return name, optLock, noUpdate, autoID
 }
 
 func getDBFields(t reflect.Type) fieldMap {

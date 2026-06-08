@@ -137,6 +137,15 @@ Then we could create a new user by doing:
     }
     // u.ID will be correctly populated at this point
 
+If the database driver still returns the generated value through
+LastInsertId, but the table metadata does not mark the column as auto
+increment, annotate the model field with auto_id:
+
+    type User struct {
+      ID   int64  `db:"id,auto_id"`
+      Name string `db:"name"`
+    }
+
 Replace
 
 The Replace method replaces a row in table, either inserting the row
