@@ -50,6 +50,12 @@ type singleColOptlock struct {
 	V int `db:"v,optlock"`
 }
 
+type boundModelInfoObject struct {
+	ID      int    `db:"id"`
+	OwnerID int    `db:"owner_id"`
+	Name    string `db:"name"`
+}
+
 func newTestStatementsDB(t *testing.T) *DB {
 	db, _ := NewDB(nil)
 
@@ -110,6 +116,100 @@ func newTestStatementsDB(t *testing.T) *DB {
 		db.mappings[modelT] = m.fields
 	}
 	return db
+}
+
+func TestDBBoundModelsReturnsReadOnlyMetadata(t *testing.T) {
+	db, _ := NewDB(nil)
+
+	table := NewTable("bound_model_info_objects", boundModelInfoObject{})
+	table.ColumnMap["id"].AutoIncr = true
+	table.ColumnMap["id"].Nullable = false
+	table.ColumnMap["id"].sqlType = "bigint(20)"
+	table.ColumnMap["owner_id"].Nullable = false
+	table.ColumnMap["owner_id"].sqlType = "bigint(20)"
+	table.ColumnMap["name"].Nullable = true
+	table.ColumnMap["name"].sqlType = "varchar(255)"
+
+	primary := &Key{
+		Name:    "PRIMARY",
+		Primary: true,
+		Unique:  true,
+		Columns: []*Column{table.ColumnMap["id"]},
+	}
+	ownerIndex := &Key{
+		Name:    "idx_owner_name",
+		Unique:  false,
+		Columns: []*Column{table.ColumnMap["owner_id"], table.ColumnMap["name"]},
+	}
+	table.PrimaryKey = primary
+	table.Keys = []*Key{primary, ownerIndex}
+	table.KeyMap = map[string]*Key{
+		"PRIMARY":        primary,
+		"idx_owner_name": ownerIndex,
+	}
+
+	modelT := reflect.TypeOf(boundModelInfoObject{})
+	model, err := newModel(db, modelT, *table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.models[modelT] = model
+	db.mappings[modelT] = model.fields
+
+	info := db.BoundModels()
+	if len(info) != 1 {
+		t.Fatalf("expected 1 bound model, got %d", len(info))
+	}
+
+	got := info[0]
+	if got.TableName != "bound_model_info_objects" {
+		t.Fatalf("expected table name %q, got %q", "bound_model_info_objects", got.TableName)
+	}
+	if got.ModelType != modelT {
+		t.Fatalf("expected model type %s, got %s", modelT, got.ModelType)
+	}
+
+	expectedColumns := []BoundColumnInfo{
+		{Name: "id", AutoIncr: true, Nullable: false, SQLType: "bigint(20)"},
+		{Name: "name", AutoIncr: false, Nullable: true, SQLType: "varchar(255)"},
+		{Name: "owner_id", AutoIncr: false, Nullable: false, SQLType: "bigint(20)"},
+	}
+	if !reflect.DeepEqual(expectedColumns, got.MappedColumns) {
+		t.Fatalf("expected mapped columns %+v, got %+v", expectedColumns, got.MappedColumns)
+	}
+
+	expectedPrimaryKey := BoundKeyInfo{
+		Name:    "PRIMARY",
+		Primary: true,
+		Unique:  true,
+		Columns: []string{"id"},
+	}
+	if !reflect.DeepEqual(expectedPrimaryKey, got.PrimaryKey) {
+		t.Fatalf("expected primary key %+v, got %+v", expectedPrimaryKey, got.PrimaryKey)
+	}
+
+	expectedIndexes := []BoundKeyInfo{
+		{Name: "PRIMARY", Primary: true, Unique: true, Columns: []string{"id"}},
+		{Name: "idx_owner_name", Primary: false, Unique: false, Columns: []string{"owner_id", "name"}},
+	}
+	if !reflect.DeepEqual(expectedIndexes, got.Indexes) {
+		t.Fatalf("expected indexes %+v, got %+v", expectedIndexes, got.Indexes)
+	}
+
+	info[0].MappedColumns[0].Name = "mutated"
+	info[0].PrimaryKey.Columns[0] = "mutated"
+	info[0].Indexes[0].Columns[0] = "mutated"
+
+	info = db.BoundModels()
+	if info[0].MappedColumns[0].Name != "id" {
+		t.Fatalf("expected mapped column metadata to be copied, got %+v", info[0].MappedColumns)
+	}
+	if info[0].PrimaryKey.Columns[0] != "id" {
+		t.Fatalf("expected primary key metadata to be copied, got %+v", info[0].PrimaryKey)
+	}
+	if info[0].Indexes[0].Columns[0] != "id" {
+		t.Fatalf("expected index metadata to be copied, got %+v", info[0].Indexes)
+	}
 }
 
 type dummyResult struct {
