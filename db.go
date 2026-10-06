@@ -1785,6 +1785,7 @@ func deleteModel(ctx context.Context, model *Model, exec Executor, list []interf
 			if err != nil {
 				return -1, err
 			}
+			// Sanity check that we are not deleting more rows than expected.
 			if maxRows := int64(i - start + 1); model.db.validateRecordWriteRowCounts && nrows > maxRows {
 				return -1, fmt.Errorf("sql: delete on table %q affected %d rows, expected at most %d", model.Name, nrows, maxRows)
 			}
@@ -2101,6 +2102,7 @@ func updateModel(ctx context.Context, model *Model, exec Executor, list []interf
 		if err != nil {
 			return -1, err
 		}
+		// Sanity check that we are not updating more rows than expected.
 		if model.db.validateRecordWriteRowCounts && rows > 1 {
 			return -1, fmt.Errorf("sql: update on table %q affected %d rows, expected at most 1", model.Name, rows)
 		}
