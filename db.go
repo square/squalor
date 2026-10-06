@@ -709,7 +709,9 @@ func (db *DB) Context() context.Context {
 // On success, returns the number of rows deleted.
 //
 // Returns an error if an element in the list has not been registered
-// with BindModel.
+// with BindModel, or a statement affects more rows than the records it targets.
+// The row-count check runs after execution. Use a transaction to roll back
+// changes if the check fails.
 //
 // Due to MySQL limitations, batch deletions are more restricted than
 // insertions. The most natural implementation would be something
@@ -985,7 +987,9 @@ func (db *DB) SelectContext(ctx context.Context, dest interface{}, q interface{}
 // On success, returns the number of rows updated.
 //
 // Returns an error if an element in the list has not been registered
-// with BindModel.
+// with BindModel, or a statement affects more than one row.
+// The row-count check runs after execution. Use a transaction to roll back
+// changes if the check fails.
 func (db *DB) Update(list ...interface{}) (int64, error) {
 	return updateObjects(db.Context(), db, db, list)
 }
@@ -1168,7 +1172,7 @@ func (tx *Tx) ExecContext(ctx context.Context, query interface{}, args ...interf
 // On success, returns the number of rows deleted.
 //
 // Returns an error if an element in the list has not been registered
-// with BindModel.
+// with BindModel, or a statement affects more rows than the records it targets.
 func (tx *Tx) Delete(list ...interface{}) (int64, error) {
 	return deleteObjects(tx.Context(), tx.DB, tx, list)
 }
@@ -1362,7 +1366,7 @@ func (tx *Tx) SelectContext(ctx context.Context, dest interface{}, q interface{}
 // On success, returns the number of rows updated.
 //
 // Returns an error if an element in the list has not been registered
-// with BindModel.
+// with BindModel, or a statement affects more than one row.
 func (tx *Tx) Update(list ...interface{}) (int64, error) {
 	return updateObjects(tx.Context(), tx.DB, tx, list)
 }
@@ -1762,6 +1766,9 @@ func deleteModel(ctx context.Context, model *Model, exec Executor, list []interf
 			if err != nil {
 				return -1, err
 			}
+			if maxRows := int64(i - start + 1); nrows > maxRows {
+				return -1, fmt.Errorf("sql: delete on table %q affected %d rows, expected at most %d", model.Name, nrows, maxRows)
+			}
 			count += nrows
 
 			// Run the hooks immediately for the objects that have been
@@ -2074,6 +2081,9 @@ func updateModel(ctx context.Context, model *Model, exec Executor, list []interf
 		rows, err := res.RowsAffected()
 		if err != nil {
 			return -1, err
+		}
+		if rows > 1 {
+			return -1, fmt.Errorf("sql: update on table %q affected %d rows, expected at most 1", model.Name, rows)
 		}
 		if model.optlockColumnName != nil {
 			if rows != 1 {
