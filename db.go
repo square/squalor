@@ -403,6 +403,8 @@ type DB struct {
 	contextInfoRewriter func(ctx context.Context, db *DB, query string) (queryWithContext string, err error)
 	// Default deadline to apply if none is present on the Context.
 	defaultDeadline time.Duration
+	// Whether record-based updates and deletes validate affected row counts.
+	validateRecordWriteRowCounts bool
 }
 
 type DBOption func(*DB) error
@@ -492,6 +494,19 @@ func IgnoreUnmappedCols(ignore bool) DBOption {
 func IgnoreMissingCols(ignore bool) DBOption {
 	return func(db *DB) error {
 		db.IgnoreMissingCols = ignore
+		return nil
+	}
+}
+
+// ValidateRecordWriteRowCounts enables checking that each record-based Update
+// or Delete statement affects no more rows than the records it targets.
+// The default is false. The setting also applies to transactions created by
+// the DB, and does not apply to statements executed directly through Exec.
+// The check runs after execution; use a transaction and roll it back on error
+// to undo changes.
+func ValidateRecordWriteRowCounts(enabled bool) DBOption {
+	return func(db *DB) error {
+		db.validateRecordWriteRowCounts = enabled
 		return nil
 	}
 }
@@ -709,9 +724,10 @@ func (db *DB) Context() context.Context {
 // On success, returns the number of rows deleted.
 //
 // Returns an error if an element in the list has not been registered
-// with BindModel, or a statement affects more rows than the records it targets.
-// The row-count check runs after execution. Use a transaction to roll back
-// changes if the check fails.
+// with BindModel. When ValidateRecordWriteRowCounts is enabled, also returns
+// an error if a statement affects more rows than the records it targets.
+// The check runs after execution. Use a transaction to roll back changes
+// if the check fails.
 //
 // Due to MySQL limitations, batch deletions are more restricted than
 // insertions. The most natural implementation would be something
@@ -987,9 +1003,10 @@ func (db *DB) SelectContext(ctx context.Context, dest interface{}, q interface{}
 // On success, returns the number of rows updated.
 //
 // Returns an error if an element in the list has not been registered
-// with BindModel, or a statement affects more than one row.
-// The row-count check runs after execution. Use a transaction to roll back
-// changes if the check fails.
+// with BindModel. When ValidateRecordWriteRowCounts is enabled, also returns
+// an error if a statement affects more than one row.
+// The check runs after execution. Use a transaction to roll back changes
+// if the check fails.
 func (db *DB) Update(list ...interface{}) (int64, error) {
 	return updateObjects(db.Context(), db, db, list)
 }
@@ -1172,7 +1189,8 @@ func (tx *Tx) ExecContext(ctx context.Context, query interface{}, args ...interf
 // On success, returns the number of rows deleted.
 //
 // Returns an error if an element in the list has not been registered
-// with BindModel, or a statement affects more rows than the records it targets.
+// with BindModel. When ValidateRecordWriteRowCounts is enabled, also returns
+// an error if a statement affects more rows than the records it targets.
 func (tx *Tx) Delete(list ...interface{}) (int64, error) {
 	return deleteObjects(tx.Context(), tx.DB, tx, list)
 }
@@ -1366,7 +1384,8 @@ func (tx *Tx) SelectContext(ctx context.Context, dest interface{}, q interface{}
 // On success, returns the number of rows updated.
 //
 // Returns an error if an element in the list has not been registered
-// with BindModel, or a statement affects more than one row.
+// with BindModel. When ValidateRecordWriteRowCounts is enabled, also returns
+// an error if a statement affects more than one row.
 func (tx *Tx) Update(list ...interface{}) (int64, error) {
 	return updateObjects(tx.Context(), tx.DB, tx, list)
 }
@@ -1766,7 +1785,7 @@ func deleteModel(ctx context.Context, model *Model, exec Executor, list []interf
 			if err != nil {
 				return -1, err
 			}
-			if maxRows := int64(i - start + 1); nrows > maxRows {
+			if maxRows := int64(i - start + 1); model.db.validateRecordWriteRowCounts && nrows > maxRows {
 				return -1, fmt.Errorf("sql: delete on table %q affected %d rows, expected at most %d", model.Name, nrows, maxRows)
 			}
 			count += nrows
@@ -2082,7 +2101,7 @@ func updateModel(ctx context.Context, model *Model, exec Executor, list []interf
 		if err != nil {
 			return -1, err
 		}
-		if rows > 1 {
+		if model.db.validateRecordWriteRowCounts && rows > 1 {
 			return -1, fmt.Errorf("sql: update on table %q affected %d rows, expected at most 1", model.Name, rows)
 		}
 		if model.optlockColumnName != nil {

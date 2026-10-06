@@ -55,9 +55,9 @@ func (r *rowCountRecord) PostDelete(Executor) error {
 	return nil
 }
 
-func newRowCountDB(t *testing.T) *DB {
+func newRowCountDB(t *testing.T, options ...DBOption) *DB {
 	t.Helper()
-	db := newTestStatementsDB(t)
+	db := newTestStatementsDB(t, options...)
 	table := NewTable("row_count", rowCountRecord{})
 	table.PrimaryKey = &Key{
 		Name:    "PRIMARY",
@@ -94,7 +94,7 @@ func TestUpdateRecordRowCounts(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			db := newRowCountDB(t)
+			db := newRowCountDB(t, ValidateRecordWriteRowCounts(true))
 			exec := &rowCountExecutor{recordingExecutor: &recordingExecutor{DB: db}, rows: tc.rows}
 			list := make([]interface{}, len(tc.rows))
 			for i := range list {
@@ -127,7 +127,7 @@ func TestUpdateRecordRowCounts(t *testing.T) {
 func TestUpdateRecordRowCountsOptlock(t *testing.T) {
 	for _, rows := range []int64{0, 1, 2} {
 		t.Run(fmt.Sprint(rows), func(t *testing.T) {
-			db := newTestStatementsDB(t)
+			db := newTestStatementsDB(t, ValidateRecordWriteRowCounts(true))
 			exec := &rowCountExecutor{recordingExecutor: &recordingExecutor{DB: db}, rows: []int64{rows}}
 			record := &singleColOptlock{A: 1, B: 2, V: 3}
 			count, err := updateObjects(context.Background(), db, exec, []interface{}{record})
@@ -175,7 +175,7 @@ func TestDeleteRecordRowCounts(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			db := newRowCountDB(t)
+			db := newRowCountDB(t, ValidateRecordWriteRowCounts(true))
 			exec := &rowCountExecutor{recordingExecutor: &recordingExecutor{DB: db}, rows: tc.rows}
 			list := make([]interface{}, len(tc.keys))
 			for i, key := range tc.keys {
@@ -202,5 +202,73 @@ func TestDeleteRecordRowCounts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A deliberately mismatched model: MySQL can coerce the VARCHAR primary key
+// to a number when compared to the numeric literal generated from ID.
+type rowCountCoercionRecord struct {
+	ID    int `db:"id"`
+	Value int `db:"value"`
+}
+
+func TestRecordWriteRowCountValidationOptions(t *testing.T) {
+	options := []struct {
+		name    string
+		options []DBOption
+		enabled bool
+	}{
+		{name: "default"},
+		{name: "disabled", options: []DBOption{ValidateRecordWriteRowCounts(false)}},
+		{name: "enabled", options: []DBOption{ValidateRecordWriteRowCounts(true)}, enabled: true},
+		{name: "last option wins", options: []DBOption{ValidateRecordWriteRowCounts(true), ValidateRecordWriteRowCounts(false)}},
+	}
+	for _, tc := range options {
+		for _, transaction := range []bool{false, true} {
+			for _, operation := range []string{"update", "delete"} {
+				t.Run(fmt.Sprintf("%s/transaction=%t/%s", tc.name, transaction, operation), func(t *testing.T) {
+					db := makeTestDBWithOptions(t, tc.options,
+						"CREATE TABLE row_count_coercion (id VARCHAR(8) PRIMARY KEY, value INT NOT NULL) ENGINE=InnoDB",
+						"INSERT INTO row_count_coercion VALUES ('1', 0), ('01', 0)",
+					)
+					defer db.Close()
+					db.MustBindModel("row_count_coercion", rowCountCoercionRecord{})
+					var exec Executor = db.WithContext(context.Background())
+					if transaction {
+						tx, err := db.Begin()
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer tx.Rollback()
+						exec = tx.WithContext(context.Background())
+					}
+					record := &rowCountCoercionRecord{ID: 1, Value: 1}
+					var count int64
+					var err error
+					if operation == "update" {
+						count, err = exec.Update(record)
+					} else {
+						count, err = exec.DeleteContext(context.Background(), record)
+					}
+					if tc.enabled {
+						if err == nil || !strings.Contains(err.Error(), "affected 2 rows, expected at most 1") || count != -1 {
+							t.Fatalf("expected row-count error, got count %d and %v", count, err)
+						}
+					} else if err != nil || count != 2 {
+						t.Fatalf("expected original behavior, got count %d and %v", count, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestUpdateRecordRowCountsOptlockDefault(t *testing.T) {
+	db := newTestStatementsDB(t)
+	exec := &rowCountExecutor{recordingExecutor: &recordingExecutor{DB: db}, rows: []int64{2}}
+	record := &singleColOptlock{A: 1, B: 2, V: 3}
+	count, err := updateObjects(context.Background(), db, exec, []interface{}{record})
+	if err != ErrConcurrentModificationDetected || count != -1 || record.V != 3 {
+		t.Fatalf("expected original optimistic-lock behavior, got count %d, error %v and version %d", count, err, record.V)
 	}
 }
