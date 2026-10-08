@@ -61,8 +61,11 @@ type boundModelInfoObject struct {
 	Name    string `db:"name"`
 }
 
-func newTestStatementsDB(t *testing.T) *DB {
-	db, _ := NewDB(nil)
+func newTestStatementsDB(t *testing.T, options ...DBOption) *DB {
+	db, err := NewDB(nil, options...)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	data := []struct {
 		name         string
